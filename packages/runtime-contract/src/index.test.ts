@@ -1,24 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
-  InvalidRunStateTransitionError,
   RunState,
-  type AgentRuntime,
+  assertValidRunStateTransition,
   type RunSnapshot,
+  type ToolCall,
 } from './index';
 
-describe('AgentRuntime contract', () => {
-  it('creates a run in CREATED state', async () => {
-    const runtime = {} as AgentRuntime;
-    const run = await runtime.startRun({ agentId: 'investment-agent', input: { task: 'screen' } });
-
-    expect(run.state).toBe(RunState.CREATED);
-    expect(run.agentId).toBe('investment-agent');
+describe('runtime contract', () => {
+  it('accepts a valid CREATED -> RUNNING transition', () => {
+    expect(() => assertValidRunStateTransition(RunState.CREATED, RunState.RUNNING)).not.toThrow();
   });
 
-  it('rejects an invalid state transition', () => {
-    expect(() => {
-      throw new InvalidRunStateTransitionError(RunState.COMPLETED, RunState.RUNNING);
-    }).toThrow('Invalid run state transition: COMPLETED -> RUNNING');
+  it('rejects a terminal -> RUNNING transition', () => {
+    expect(() => assertValidRunStateTransition(RunState.COMPLETED, RunState.RUNNING)).toThrow(
+      'Invalid run state transition: COMPLETED -> RUNNING',
+    );
   });
 
   it('defines a recoverable snapshot boundary', () => {
@@ -32,5 +28,17 @@ describe('AgentRuntime contract', () => {
 
     expect(snapshot.version).toBe(3);
     expect(snapshot.state).toBe(RunState.WAITING);
+  });
+
+  it('defines a framework-neutral tool call contract', () => {
+    const toolCall: ToolCall = {
+      toolCallId: 'tool-call-1',
+      name: 'screen_company',
+      input: { companyId: 'company-1' },
+      status: 'PENDING',
+      idempotencyKey: 'run-1:tool-call-1',
+    };
+
+    expect(toolCall.status).toBe('PENDING');
   });
 });
