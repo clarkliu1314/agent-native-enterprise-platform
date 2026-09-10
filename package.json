@@ -3,7 +3,8 @@
   "private": true,
   "packageManager": "pnpm@10.15.0",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "vitest": "^3.2.4",
