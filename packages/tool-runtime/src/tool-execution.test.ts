@@ -7,17 +7,17 @@ import {
 } from './tool-execution';
 
 /**
- * Task 4 RED tests.
+ * Task 4 contract tests.
  *
- * These tests deliberately describe the safety boundary before the implementation exists:
- * 1. authorization must happen before an externally effectful tool is invoked;
- * 2. the same idempotency key must never produce a second external side effect;
- * 3. a successful effect and its outbox event must be committed as one durable operation;
- * 4. a failed effect must not publish a success event.
+ * These tests define the safety boundary before framework adapters are introduced:
+ * 1. authorization happens before an externally effectful tool is invoked;
+ * 2. the same idempotency key never causes a second external effect;
+ * 3. the result and outbox event are handed to one atomic persistence boundary;
+ * 4. a failed external operation cannot publish a success event.
  *
- * The tests use an in-process durable fake only to make the contract executable without
- * coupling the application-facing API to PostgreSQL. The production implementation will
- * provide the same semantics with a transactional persistence adapter.
+ * The implementation currently uses an in-process reference store. A PostgreSQL adapter
+ * will implement the same persistence callback with one database transaction, allowing
+ * the application-facing runtime contract to remain framework-neutral.
  */
 
 describe('ToolExecutionService', () => {
@@ -62,6 +62,7 @@ describe('ToolExecutionService', () => {
     const service = new ToolExecutionService({
       authorize: async () => true,
       execute,
+      persistResultAndPublishOutbox: async () => undefined,
     });
 
     const request = {
@@ -78,13 +79,13 @@ describe('ToolExecutionService', () => {
     expect(externalCalls).toBe(1);
   });
 
-  it('persists one outbox event for one successful side effect', async () => {
-    const outboxEvents: unknown[] = [];
+  it('persists one result and one outbox event for one successful side effect', async () => {
+    const commits: unknown[] = [];
     const service = new ToolExecutionService({
       authorize: async () => true,
       execute: async () => ({ companyId: 'company-1' }),
-      publishOutbox: async (event) => {
-        outboxEvents.push(event);
+      persistResultAndPublishOutbox: async (commit) => {
+        commits.push(commit);
       },
     });
 
@@ -95,22 +96,24 @@ describe('ToolExecutionService', () => {
       idempotencyKey: 'idem-outbox-1',
     });
 
-    expect(outboxEvents).toHaveLength(1);
-    expect(outboxEvents[0]).toMatchObject({
-      type: 'tool.execution.completed',
+    expect(commits).toHaveLength(1);
+    expect(commits[0]).toMatchObject({
       idempotencyKey: 'idem-outbox-1',
       toolName: 'crm.create_company',
+      outboxEvent: {
+        type: 'tool.execution.completed',
+      },
     });
   });
 
-  it('does not publish a success outbox event when the external effect fails', async () => {
-    const publishOutbox = vi.fn();
+  it('does not persist a success result or publish an outbox event when the external effect fails', async () => {
+    const persistResultAndPublishOutbox = vi.fn();
     const service = new ToolExecutionService({
       authorize: async () => true,
       execute: async () => {
         throw new Error('CRM unavailable');
       },
-      publishOutbox,
+      persistResultAndPublishOutbox,
     });
 
     await expect(
@@ -122,6 +125,6 @@ describe('ToolExecutionService', () => {
       }),
     ).rejects.toThrow('CRM unavailable');
 
-    expect(publishOutbox).not.toHaveBeenCalled();
+    expect(persistResultAndPublishOutbox).not.toHaveBeenCalled();
   });
 });
