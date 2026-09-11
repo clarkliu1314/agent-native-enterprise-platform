@@ -14,7 +14,7 @@ class FakeRepos implements DurableRepositories {
   idempotency?: IdempotencyRecord;
   events: RuntimeEventView[] = [];
   checkpoints: CheckpointEnvelope[] = [];
-  async admitRun(input: { command: CreateRunCommand; commandHash: string; runId: string; eventId: string }) { this.idempotency = { key: input.command.idempotencyKey ?? `run:${input.runId}`, commandHash: input.commandHash, runId: this.current.runId }; this.current = { ...this.current, runId: input.runId, agentId: input.command.agentId, input: input.command.input }; return this.current; }
+  async admitRun(input: { command: CreateRunCommand; commandHash: string; runId: string; eventId: string }) { this.idempotency = { key: input.command.idempotencyKey ?? `run:${input.runId}`, commandHash: input.commandHash, runId: input.runId }; this.current = { ...this.current, runId: input.runId, agentId: input.command.agentId, input: input.command.input }; return this.current; }
   async getRun(id: string) { return id === this.current.runId ? this.current : null; }
   async getIdempotency(key: string) { return this.idempotency?.key === key ? this.idempotency : null; }
   async insertIdempotency(record: IdempotencyRecord) { this.idempotency = record; }
@@ -45,7 +45,6 @@ describe('DurableRuntimeService', () => {
     const service = new DurableRuntimeService(repos, { adapter });
     const command: CreateRunCommand = { agentId: 'agent', input: { x: 1 }, idempotencyKey: 'same' };
     const first = await service.createRun(command);
-    repos.current = first.run;
     const second = await service.createRun(command);
     expect(first.replayed).toBe(false);
     expect(second.replayed).toBe(true);
@@ -56,7 +55,6 @@ describe('DurableRuntimeService', () => {
     const repos = new FakeRepos();
     const service = new DurableRuntimeService(repos, { adapter });
     const created = await service.createRun({ agentId: 'agent', input: {} });
-    repos.current = created.run;
     const result = await service.executeRunBounded(created.run.runId, 'worker-1', new Date(Date.now() + 1000));
     expect(result.terminal).toBe(true);
     expect(result.run.state).toBe('SUCCEEDED');
