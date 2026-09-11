@@ -1,23 +1,40 @@
-# Local Development
+# Local Docker Compose environment
 
-## Prerequisites
+The repository provides a self-contained local environment for the durable platform core. It keeps PostgreSQL and Redis inside the Compose network and runs migration, worker-package smoke tests, and benchmark smoke tests without requiring Node.js or pnpm on the host.
 
-- Node.js 22 or newer
-- pnpm 10.15.0
-- Docker with Compose
+## Services
 
-## Fast verification
+| Service | Role |
+| --- | --- |
+| `postgres` | PostgreSQL durable system of record |
+| `redis` | Local asynchronous delivery/queue infrastructure boundary |
+| `migrate` | Idempotent schema bootstrap and deterministic seed |
+| `worker` | Worker package startup/test smoke gate |
+| `benchmark` | Framework-neutral benchmark smoke gate |
+
+The repository does not yet contain production API, web, or mock-LLM applications. Compose intentionally does not create fake application services; those boundaries will be added when their implementation tasks land.
+
+## Start and verify
+
+Run:
 
 ```bash
-pnpm install
-pnpm typecheck
-pnpm test
+docker compose up --build -d
+docker compose wait benchmark
+test "$(docker inspect "$(docker compose ps -q benchmark)" --format '{{.State.ExitCode}}')" = "0"
+docker compose down -v
 ```
 
-## Durable services
+For a one-shot CI-style verification, the workflow performs the same sequence and also validates `docker compose config` first.
 
-Use `docker compose up -d` for the repository's PostgreSQL/Redis development services once the Compose stack is configured for the corresponding application stage. Persistence tests must run against PostgreSQL rather than a mocked repository.
+## Determinism
 
-## Agent workflow
+- PostgreSQL and Redis use pinned major-version images (`postgres:17-alpine` and `redis:7-alpine`).
+- PostgreSQL and Redis expose health checks before dependent services proceed.
+- `migrate` waits for PostgreSQL health and applies `infra/compose/migrate.sql` with `ON_ERROR_STOP=1`.
+- The seed row is inserted with `ON CONFLICT DO NOTHING`, so repeated startup is safe.
+- Benchmark containers receive service-local `DATABASE_URL` and `REDIS_URL` values and `TZ=UTC`.
 
-Start from `AGENTS.md`, use `.codex/skills` for specialized workflows, and keep focused commits. CI is the final authority when local tooling cannot reproduce the hosted environment.
+## Architectural boundary
+
+Compose is orchestration only. It does not redefine the Runtime Contract, Tool Permission, Idempotency, transactional Outbox, or Crash Recovery semantics. PostgreSQL remains the durable source of truth; Redis is an infrastructure boundary for future asynchronous delivery rather than a replacement for durable state.
