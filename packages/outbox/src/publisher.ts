@@ -6,11 +6,11 @@ export interface OutboxMessage {
 
 export interface OutboxRepository {
   /** Claim unpublished messages so concurrent workers do not process the same row concurrently. */
-  claim(limit: number): Promise<OutboxMessage[]>;
-  /** Mark a message published only after the broker confirms acceptance. */
-  markPublished(eventId: string): Promise<void>;
-  /** Release a failed claim so the message can be retried. */
-  release(eventId: string, error: unknown): Promise<void>;
+  claim(limit: number, workerId: string): Promise<OutboxMessage[]>;
+  /** Mark a message published only after the broker confirms acceptance and the lease still belongs to this worker. */
+  markPublished(eventId: string, workerId: string): Promise<void>;
+  /** Release a failed claim so the message can be retried with repository-managed backoff/terminal policy. */
+  release(eventId: string, workerId: string, error: unknown): Promise<void>;
 }
 
 export type OutboxTransport = (message: OutboxMessage) => Promise<void>;
@@ -29,21 +29,21 @@ export class OutboxPublisher {
     private readonly transport: OutboxTransport,
   ) {}
 
-  async publishBatch(limit = 100): Promise<number> {
-    const messages = await this.repository.claim(limit);
+  async publishBatch(limit = 100, workerId = 'outbox-worker'): Promise<number> {
+    const messages = await this.repository.claim(limit, workerId);
     let published = 0;
 
     for (const message of messages) {
       try {
         await this.transport(message);
-        await this.repository.markPublished(message.eventId);
+        await this.repository.markPublished(message.eventId, workerId);
         published += 1;
       } catch (error) {
         // The event remains unpublished and is explicitly released for a later retry.
         // This covers both transport failures and acknowledgement failures. If the
         // transport succeeded but the acknowledgement failed, a duplicate is possible;
         // that is the expected at-least-once trade-off and requires consumer idempotency.
-        await this.repository.release(message.eventId, error);
+        await this.repository.release(message.eventId, workerId, error);
       }
     }
 
