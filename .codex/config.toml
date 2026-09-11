@@ -1,12 +1,6 @@
-# Repository-local Codex defaults.
-# Keep this file declarative and non-secret; behavior belongs in AGENTS.md and skills.
+#:schema https://developers.openai.com/codex/config-schema.json
 
-[project]
-name = "agent-native-enterprise-platform"
-
-[commands]
-test = "pnpm test"
-typecheck = "pnpm typecheck"
-
-[skills]
-paths = [".codex/skills"]
+# Repository instructions live in AGENTS.md.
+# Repository skills are auto-discovered from .agents/skills.
+# Keep this file intentionally minimal so unsupported local aliases do not become
+# a hidden dependency of the project.
