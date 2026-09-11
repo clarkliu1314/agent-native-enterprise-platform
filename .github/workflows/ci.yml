@@ -39,6 +39,8 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       - name: Typecheck
         run: pnpm typecheck
+      - name: Verify deployment boundary
+        run: pnpm exec vitest run packages/deployment-boundary apps/api
       - name: Test
         run: pnpm test
 
