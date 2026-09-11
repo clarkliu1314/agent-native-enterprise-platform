@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { RecoveryCandidateStore, RecoveryCoordinator, type RecoveryState } from '@agent-native/durability';
 import { PostgresToolExecutionStore as DurableToolStore, ToolExecutionService, type ToolExecutionRequest } from '@agent-native/tool-runtime';
-import { OutboxPublisher, PostgresOutboxRepository, type OutboxMessage, type OutboxRepository } from '@agent-native/outbox';
+import { OutboxPublisher, PostgresOutboxRepository } from '@agent-native/outbox';
 import type { BenchmarkAdapter, BenchmarkCase } from './index';
 import type { BenchmarkScenarioResult } from './scenario-runner';
 
@@ -66,17 +66,21 @@ export async function executePostgresRecoveryScenario(caseId: BenchmarkCase['id'
 
     if (caseId === 'B12') {
       await service.execute(request);
-      let acknowledgeAttempts = 0;
-      const repository = new AckFailingRepository(outboxStore, () => { acknowledgeAttempts += 1; });
-      const transport = async (_message: OutboxMessage) => { state.deliveries += 1; if (state.deliveries === 1) state.logicalEffects += 1; };
-      const publisher = new OutboxPublisher(repository, transport);
-      await publisher.publishBatch(1, 'worker-b12');
-      await pool.query('UPDATE outbox_events SET available_at = NOW(), locked_at = NULL, locked_by = NULL WHERE tenant_id = $1 AND idempotency_key = $2', [request.context.tenantId, request.idempotencyKey]);
-      await publisher.publishBatch(1, 'worker-b12');
+      const transport = async () => {
+        state.deliveries += 1;
+        if (state.deliveries === 1) state.logicalEffects += 1;
+      };
+      const firstClaim = await outboxStore.claim(1, 'worker-b12-crashed');
+      const firstMessage = firstClaim[0];
+      if (!firstMessage) return result(caseId, adapter, { violations: ['outbox'], details: `postgresql: true; adapter: ${adapter}; deliveries: 0; logical effects: 0; published: false; recovered: 0` });
+      await transport();
+      await pool.query("UPDATE outbox_events SET locked_at = NOW() - INTERVAL '10 minutes' WHERE event_id = $1", [firstMessage.eventId]);
+      const publisher = new OutboxPublisher(outboxStore, transport);
+      await publisher.publishBatch(1, 'worker-b12-recovery');
       const recovered = await coordinator.recover({ request, state: 'SUCCEEDED' });
       const rows = await pool.query('SELECT COUNT(*)::int AS count, MAX(status) AS status FROM outbox_events WHERE tenant_id = $1 AND idempotency_key = $2', [request.context.tenantId, request.idempotencyKey]);
       const outboxEvents = Number(rows.rows[0]?.count ?? 0);
-      return result(caseId, adapter, { violations: state.deliveries === 2 && state.logicalEffects === 1 && outboxEvents === 1 && rows.rows[0]?.status === 'PUBLISHED' && acknowledgeAttempts === 2 && recovered.replayed ? [] : ['outbox', 'idempotency'], details: `postgresql: true; adapter: ${adapter}; deliveries: ${state.deliveries}; logical effects: ${state.logicalEffects}; published: ${rows.rows[0]?.status === 'PUBLISHED'}; recovered: ${recovered ? 1 : 0}` });
+      return result(caseId, adapter, { violations: state.deliveries === 2 && state.logicalEffects === 1 && outboxEvents === 1 && rows.rows[0]?.status === 'PUBLISHED' && recovered.replayed ? [] : ['outbox', 'idempotency'], details: `postgresql: true; adapter: ${adapter}; deliveries: ${state.deliveries}; logical effects: ${state.logicalEffects}; published: ${rows.rows[0]?.status === 'PUBLISHED'}; recovered: ${recovered ? 1 : 0}` });
     }
 
     await seedRetryable(pool, request);
@@ -130,15 +134,3 @@ async function cleanup(pool: Pool, prefix: string): Promise<void> {
 }
 
 function result(_caseId: string, _adapter: BenchmarkAdapter, value: { violations: string[]; details: string }): BenchmarkScenarioResult { return { invariantViolations: value.violations, details: value.details }; }
-
-class AckFailingRepository implements OutboxRepository {
-  private failed = false;
-  constructor(private readonly delegate: PostgresOutboxRepository, private readonly onAttempt: () => void) {}
-  claim(limit: number, workerId: string) { return this.delegate.claim(limit, workerId); }
-  release(eventId: string, workerId: string, error: unknown) { return this.delegate.release(eventId, workerId, error); }
-  async markPublished(eventId: string, workerId: string): Promise<void> {
-    this.onAttempt();
-    if (!this.failed) { this.failed = true; throw new Error('acknowledgement lost'); }
-    await this.delegate.markPublished(eventId, workerId);
-  }
-}
