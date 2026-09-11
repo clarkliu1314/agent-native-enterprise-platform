@@ -46,7 +46,17 @@ describe('PostgresToolExecutionStore', () => {
 
     expect(result).toEqual({ output: { companyId: 'company-reconcile' }, replayed: true });
     expect(rows.rows).toHaveLength(1);
-    expect(rows.rows[0]).toMatchObject({ event_type: 'tool.execution.completed', payload: { companyId: 'company-reconcile' } });
+    expect(rows.rows[0]).toMatchObject({
+      event_type: 'tool.execution.completed',
+      payload: {
+        type: 'tool.execution.completed',
+        idempotencyKey: 'state-reconcile',
+        toolName: 'crm.create_company',
+        tenantId: 'fund-1',
+        actorId: 'user-1',
+        output: { companyId: 'company-reconcile' },
+      },
+    });
   });
 
   it('rejects the same key with a different payload as an explicit conflict', async () => {
