@@ -49,7 +49,7 @@ export class RecoveryCandidateStore {
         metadata JSONB NOT NULL DEFAULT '{}'::jsonb
       );
       ALTER TABLE agent_runs
-        ADD COLUMN IF NOT EXISTS recovery_state TEXT NOT NULL DEFAULT 'IN_PROGRESS',
+        ADD COLUMN IF NOT EXISTS recovery_state TEXT NOT NULL DEFAULT 'NONE',
         ADD COLUMN IF NOT EXISTS recovery_attempts INTEGER NOT NULL DEFAULT 0,
         ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         ADD COLUMN IF NOT EXISTS recovery_owner TEXT,
@@ -111,12 +111,7 @@ export class RecoveryCandidateStore {
         [runId, owner, leaseToken, leaseExpiresAt],
       );
       await client.query('COMMIT');
-      return {
-        runId, owner, leaseToken, leaseExpiresAt,
-        attempts: Number(row.recovery_attempts),
-        request: row.recovery_request as ToolExecutionRequest,
-        state: row.recovery_state as RecoveryState,
-      };
+      return { runId, owner, leaseToken, leaseExpiresAt, attempts: Number(row.recovery_attempts), request: row.recovery_request as ToolExecutionRequest, state: row.recovery_state as RecoveryState };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
