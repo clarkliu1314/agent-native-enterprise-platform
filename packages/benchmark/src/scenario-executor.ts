@@ -13,6 +13,7 @@ import { RecoveryCoordinator, type RecoveryCandidate } from '@agent-native/durab
 import { InMemoryAgentRuntime } from '@agent-native/runtime';
 import type { BenchmarkAdapter, BenchmarkCase } from './index';
 import { createBenchmarkAdapters } from './adapters';
+import { executePostgresRecoveryScenario } from './postgres-recovery-scenarios';
 import type { BenchmarkScenarioResult } from './scenario-runner';
 
 interface ScenarioState {
@@ -92,6 +93,10 @@ class ScenarioRecoveryStore {
 }
 
 export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterName: BenchmarkAdapter): Promise<BenchmarkScenarioResult> {
+  if (process.env.DATABASE_URL && ['B09', 'B10', 'B11', 'B12', 'B13'].includes(testCase.id)) {
+    return executePostgresRecoveryScenario(testCase.id, adapterName, process.env.DATABASE_URL);
+  }
+
   const runtime = new InMemoryAgentRuntime();
   const adapter = createBenchmarkAdapters(runtime).find((candidate) => candidate.framework === adapterName);
   if (!adapter) throw new Error(`Unknown benchmark adapter: ${adapterName}`);
