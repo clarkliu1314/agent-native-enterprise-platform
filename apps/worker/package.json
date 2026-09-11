@@ -9,7 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@agent-native/durability": "workspace:*"
+    "@agent-native/durability": "workspace:*",
+    "@agent-native/tool-runtime": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.2.4"
