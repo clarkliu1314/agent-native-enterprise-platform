@@ -120,6 +120,18 @@ export class RecoveryCandidateStore {
     }
   }
 
+  async renewRecoveryLease(runId: string, owner: string, leaseToken: string, leaseMs = 30_000, now = new Date()): Promise<boolean> {
+    const leaseExpiresAt = new Date(now.getTime() + leaseMs);
+    const result = await this.pool.query(
+      `UPDATE agent_runs
+       SET recovery_lease_expires_at = $4
+       WHERE run_id = $1 AND recovery_owner = $2 AND recovery_lease_token = $3
+         AND recovery_state IN ('IN_PROGRESS', 'FAILED_RETRYABLE')`,
+      [runId, owner, leaseToken, leaseExpiresAt],
+    );
+    return result.rowCount === 1;
+  }
+
   async reclaimExpiredRecoveryCandidates(now = new Date()): Promise<number> {
     const result = await this.pool.query(
       `UPDATE agent_runs
