@@ -1,0 +1,17 @@
+{
+  "name": "@agent-native/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/recovery-worker.ts",
+  "types": "./src/recovery-worker.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agent-native/durability": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}
