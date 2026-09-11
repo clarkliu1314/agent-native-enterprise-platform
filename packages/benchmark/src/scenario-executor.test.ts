@@ -53,4 +53,22 @@ describe('benchmark scenario executor', () => {
     expect(result.details).toContain('tool executions: 1');
     expect(result.details).toContain('outbox events: 1');
   });
+
+  it.each(benchmarkAdapters)('retries an unpublished outbox message for B07 through the %s adapter', async (adapter) => {
+    const result = await executeBenchmarkScenario(benchmarkCases[6], adapter);
+
+    expect(result.invariantViolations).toEqual([]);
+    expect(result.details).toContain('publish attempts: 2');
+    expect(result.details).toContain('published: 1');
+    expect(result.details).toContain('ack before transport: false');
+  });
+
+  it.each(benchmarkAdapters)('tolerates duplicate outbox delivery for B08 through the %s adapter', async (adapter) => {
+    const result = await executeBenchmarkScenario(benchmarkCases[7], adapter);
+
+    expect(result.invariantViolations).toEqual([]);
+    expect(result.details).toContain('deliveries: 2');
+    expect(result.details).toContain('logical effects: 1');
+    expect(result.details).toContain('published: 1');
+  });
 });
