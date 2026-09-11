@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { PostgresToolExecutionStore } from './postgres-tool-execution-store';
+import { ToolExecutionService } from './tool-execution';
 
 const databaseUrl = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/agent_native';
 
@@ -22,6 +23,25 @@ describe('PostgresToolExecutionStore', () => {
     expect(first).toEqual({ kind: 'RESERVED', state: 'IN_PROGRESS' });
     await store.commit({ idempotencyKey: 'state-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' }, outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'state-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' } } });
     expect(await store.reserve({ idempotencyKey: 'state-1', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme' } })).toEqual({ kind: 'REPLAY', state: 'SUCCEEDED', output: { companyId: 'company-1' } });
+  });
+
+  it('reconciles a succeeded result whose outbox event was missing after a crash', async () => {
+    const request = { idempotencyKey: 'state-reconcile', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme' } };
+    await store.reserve(request);
+    await store.commit({ idempotencyKey: request.idempotencyKey, toolName: request.toolName, tenantId: request.tenantId, actorId: request.actorId, output: { companyId: 'company-reconcile' }, outboxEvent: { type: 'tool.execution.completed', idempotencyKey: request.idempotencyKey, toolName: request.toolName, tenantId: request.tenantId, actorId: request.actorId, output: { companyId: 'company-reconcile' } } });
+    await pool.query('DELETE FROM outbox_events WHERE idempotency_key = $1', [request.idempotencyKey]);
+
+    const service = new ToolExecutionService({
+      authorize: async () => true,
+      execute: async () => ({ companyId: 'must-not-execute-again' }),
+      store,
+    });
+    const result = await service.execute(request);
+    const rows = await pool.query('SELECT event_id, event_type, payload FROM outbox_events WHERE tenant_id = $1 AND idempotency_key = $2', [request.tenantId, request.idempotencyKey]);
+
+    expect(result).toEqual({ output: { companyId: 'company-reconcile' }, replayed: true });
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toMatchObject({ event_type: 'tool.execution.completed', payload: { companyId: 'company-reconcile' } });
   });
 
   it('rejects the same key with a different payload as an explicit conflict', async () => {
