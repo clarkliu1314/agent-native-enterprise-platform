@@ -1,13 +1,10 @@
 import { PostgresRuntimeRepositories } from './postgres-runtime-repositories';
-import type { SqlClient, TransactionRunner } from './ports';
 import type { ToolCallRecord } from './repositories';
 
 const json = (value: unknown): string => JSON.stringify(value ?? null);
 const bigintValue = (value: unknown): bigint => typeof value === 'bigint' ? value : BigInt(String(value));
 
 export class PostgresToolRepositories extends PostgresRuntimeRepositories {
-  constructor(private readonly db: TransactionRunner & SqlClient) { super(db); }
-
   async createToolCall(input: ToolCallRecord): Promise<void> {
     await this.db.query(
       `INSERT INTO tool_calls (tool_call_id, run_id, fencing_token, idempotency_key, tool_name, kind, status, input)
