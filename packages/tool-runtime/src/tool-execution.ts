@@ -53,16 +53,29 @@ export interface ToolExecutionCommit {
   outboxEvent: ToolExecutionOutboxEvent;
 }
 
+/**
+ * Durable idempotency/outbox storage contract.
+ *
+ * The runtime only depends on this tiny interface. PostgreSQL, a test store, or a future
+ * enterprise persistence service can implement it without changing any Agent adapter.
+ */
+export interface ToolExecutionStore {
+  get(idempotencyKey: string): Promise<unknown | null>;
+  commit(commit: ToolExecutionCommit): Promise<void>;
+}
+
 export interface ToolExecutionDependencies {
   /** Must be evaluated before any side effect is attempted. */
   authorize: (request: ToolExecutionRequest) => Promise<boolean>;
   /** Performs the actual external operation. */
   execute: (request: ToolExecutionRequest) => Promise<unknown>;
   /**
-   * Atomic durability boundary: persist the idempotency result and outbox event together.
-   * A PostgreSQL implementation will perform both writes in one database transaction.
+   * Reference persistence hook. It is intentionally optional because production callers
+   * should provide `store`, while small unit tests can exercise the execution ordering.
    */
   persistResultAndPublishOutbox?: (commit: ToolExecutionCommit) => Promise<void>;
+  /** Durable store used by production runtimes. */
+  store?: ToolExecutionStore;
 }
 
 export class ToolPermissionDeniedError extends Error {
@@ -75,12 +88,12 @@ export class ToolPermissionDeniedError extends Error {
 /**
  * Reference execution service.
  *
- * The pipeline is intentionally explicit:
+ * The pipeline is explicit and should remain stable:
  *   authorize -> idempotency -> execute -> persist result + outbox
  *
- * The Map is a reference store for unit tests only. Production will supply a durable
- * persistence implementation; keeping that implementation behind the dependency makes
- * the runtime contract independent from any Agent framework or database vendor.
+ * When `store` is supplied, idempotency survives process restarts and is safe to share
+ * across workers. The local maps are only a single-process optimization for the reference
+ * implementation and must never be treated as the enterprise durability mechanism.
  */
 export class ToolExecutionService {
   private readonly results = new Map<string, ToolExecutionResult>();
@@ -95,13 +108,18 @@ export class ToolExecutionService {
       throw new ToolPermissionDeniedError(request.tool.name);
     }
 
+    const durableOutput = await this.dependencies.store?.get(request.idempotencyKey);
+    if (durableOutput !== null && durableOutput !== undefined) {
+      return { output: durableOutput, replayed: true };
+    }
+
     const existing = this.results.get(request.idempotencyKey);
     if (existing) {
       return { ...existing, replayed: true };
     }
 
     // Close the common in-process race where two identical Agent retries arrive together.
-    // Cross-process uniqueness is a database responsibility, not an in-memory one.
+    // Cross-process uniqueness is enforced by the durable store's database constraint.
     const running = this.inFlight.get(request.idempotencyKey);
     if (running) {
       const result = await running;
@@ -139,11 +157,12 @@ export class ToolExecutionService {
       },
     };
 
-    // This callback is the explicit transaction boundary. The durable implementation must
-    // commit the idempotency record and outbox row together; splitting those writes creates
-    // a crash window in which a retry can duplicate an external side effect or an event can
-    // be lost.
-    if (this.dependencies.persistResultAndPublishOutbox) {
+    // Prefer the durable store. It is responsible for making result + outbox one
+    // transaction. The callback remains available as a lightweight reference seam for
+    // unit tests and alternate transactional implementations.
+    if (this.dependencies.store) {
+      await this.dependencies.store.commit(commit);
+    } else if (this.dependencies.persistResultAndPublishOutbox) {
       await this.dependencies.persistResultAndPublishOutbox(commit);
     }
 
