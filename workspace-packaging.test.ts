@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -13,19 +13,19 @@ type PackageManifest = {
   devDependencies?: Record<string, string>;
 };
 
+function packageManifestPaths(root: string): string[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(root, entry.name, 'package.json'))
+    .filter(existsSync);
+}
+
 function workspacePackagePaths(): string[] {
   return [
-    ...readdirSync('packages', { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => join('packages', entry.name, 'package.json')),
-    ...['apps'].flatMap((root) =>
-      readdirSync(root, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => join(root, entry.name, 'package.json')),
-    ),
-    ...readdirSync('packages/adapters', { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => join('packages/adapters', entry.name, 'package.json')),
+    ...packageManifestPaths('packages'),
+    ...packageManifestPaths('apps'),
+    ...packageManifestPaths('packages/adapters'),
   ];
 }
 
