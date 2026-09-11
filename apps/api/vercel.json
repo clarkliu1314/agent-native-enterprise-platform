@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "src/handler.ts": {
+      "runtime": "nodejs22.x"
+    }
+  }
+}
