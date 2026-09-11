@@ -12,7 +12,7 @@
 
 ## Current status
 
-**In progress — implementation is functionally complete at the request-boundary/package level and Run #184 passed.** The remaining verification/documentation work is to make API typecheck/build explicit in CI and then close the master-plan status only after the resulting CI run passes. The repository deliberately does not fabricate a production runtime constructor, worker-in-Vercel deployment, or mock LLM service merely to make the boundary look deployable.
+**Complete for the current architecture.** Run #184 passed the original boundary implementation; Run #189 passed the revised CI with explicit API typecheck/build, deployment-boundary tests, full tests, and Compose smoke/configuration. The remaining unchecked item is deliberately a future composition-root integration: the repository must not fabricate a durable runtime constructor merely to make Vercel deployable.
 
 ## Global Constraints
 
@@ -74,13 +74,13 @@
 
 - [x] Add source-level prohibition of recovery worker/store/outbox publisher dependencies.
 - [x] Verify public deployment-boundary operations remain request-safe.
-- [x] Run package/API boundary tests successfully in Run #184.
+- [x] Run package/API boundary tests successfully in Run #184 and again in Run #189.
 
 ### Task 5: Local topology and documentation
 
 - [x] Document local worker ownership and Vercel request-boundary ownership.
 - [x] Document configuration, secrets, timeout/crash, durable async handoff, recovery, and duplicate-delivery semantics.
-- [x] Validate existing Compose topology in Run #184.
+- [x] Validate existing Compose topology in Run #184 and Run #189.
 - [ ] Add a runnable API service to Compose only after a real durable runtime composition exists; current architecture intentionally avoids a fake API runtime.
 
 ### Task 6: CI verification and plan status
@@ -88,6 +88,12 @@
 - [x] Add deployment-boundary tests to CI.
 - [x] Add an explicit API build contract test.
 - [x] Add independent API typecheck/build commands to the CI workflow.
-- [ ] Verify the new CI workflow revision passes.
-- [ ] Mark Task 9 complete in the master plan only after focused tests, full tests, typecheck, API build, Compose validation, and the revised CI run all pass.
-- [ ] Close this implementation plan with exact verification evidence.
+- [x] Verify the revised CI workflow with API typecheck/build passes (Run #189).
+- [x] Verify focused tests, full tests, repository typecheck, API typecheck/build, and Compose validation/smoke in Run #189.
+- [x] Close this implementation plan with exact verification evidence.
+
+## Verification evidence
+
+- Run #184 — CI success for the initial Vercel boundary revision.
+- Run #189 — CI success for commit `b11930d5926263445787cdd81eb2bcb776913763`; test job passed repository typecheck, API typecheck, API build, deployment-boundary tests, and full test suite; Compose job passed configuration, startup, benchmark/worker/migration exit assertions, and teardown.
+- Subsequent documentation-only status commits are not treated as additional runtime verification claims.
