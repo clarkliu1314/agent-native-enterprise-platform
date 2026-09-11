@@ -9,6 +9,8 @@ import {
   type BenchmarkRunner,
 } from './index';
 
+export { benchmarkCases };
+
 export interface BenchmarkScenarioResult {
   invariantViolations: readonly string[];
   details: string;
