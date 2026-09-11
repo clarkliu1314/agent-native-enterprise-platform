@@ -49,8 +49,15 @@ jobs:
         uses: actions/checkout@v4
       - name: Validate Compose configuration
         run: docker compose config
-      - name: Start local environment and run benchmark smoke test
-        run: docker compose up --build --abort-on-container-exit --exit-code-from benchmark
+      - name: Start local environment
+        run: docker compose up --build -d
+      - name: Wait for benchmark smoke test
+        run: docker compose wait benchmark
+      - name: Assert benchmark smoke test succeeded
+        run: test "$(docker inspect "$(docker compose ps -q benchmark)" --format '{{.State.ExitCode}}')" = "0"
+      - name: Show service status
+        if: always()
+        run: docker compose ps -a
       - name: Tear down local environment
         if: always()
         run: docker compose down -v
