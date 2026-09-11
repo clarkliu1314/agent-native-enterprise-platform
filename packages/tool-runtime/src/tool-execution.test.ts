@@ -1,24 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  IdempotencyInProgressError,
   ToolExecutionService,
   ToolPermissionDeniedError,
   type ToolDefinition,
   type ToolExecutionContext,
+  type ToolExecutionStore,
 } from './tool-execution';
-
-/**
- * Task 4 contract tests.
- *
- * These tests define the safety boundary before framework adapters are introduced:
- * 1. authorization happens before an externally effectful tool is invoked;
- * 2. the same idempotency key never causes a second external effect;
- * 3. the result and outbox event are handed to one atomic persistence boundary;
- * 4. a failed external operation cannot publish a success event.
- *
- * The implementation currently uses an in-process reference store. A PostgreSQL adapter
- * implements the same persistence callback with one database transaction, allowing the
- * application-facing runtime contract to remain framework-neutral.
- */
 
 describe('ToolExecutionService', () => {
   const tool: ToolDefinition = {
@@ -128,5 +116,111 @@ describe('ToolExecutionService', () => {
     ).rejects.toThrow('CRM unavailable');
 
     expect(persistResultAndPublishOutbox).not.toHaveBeenCalled();
+  });
+
+  it('C1: after a worker crash before the external effect, a reclaimed reservation safely retries', async () => {
+    let reservations = 0;
+    let externalCalls = 0;
+    const store: ToolExecutionStore = {
+      reserve: vi.fn(async () => {
+        reservations += 1;
+        return reservations === 1
+          ? { kind: 'RESERVED', state: 'IN_PROGRESS' }
+          : { kind: 'RETRY', state: 'FAILED_RETRYABLE' };
+      }),
+      get: vi.fn(async () => null),
+      commit: vi.fn(async () => undefined),
+      fail: vi.fn(async () => undefined),
+    };
+    const execute = vi.fn(async () => {
+      externalCalls += 1;
+      return { companyId: 'company-c1' };
+    });
+
+    const service = new ToolExecutionService({ authorize: async () => true, execute, store });
+    const request = { tool, input: { name: 'Acme Capital' }, context, idempotencyKey: 'idem-c1' };
+
+    // First worker dies immediately after reserving; the second worker reuses the same key.
+    const firstReservation = await store.reserve({
+      idempotencyKey: request.idempotencyKey,
+      tenantId: context.tenantId,
+      toolName: tool.name,
+      actorId: context.actorId,
+      input: request.input,
+    });
+    expect(firstReservation.kind).toBe('RESERVED');
+
+    const recovered = await service.execute(request);
+    expect(recovered.output).toEqual({ companyId: 'company-c1' });
+    expect(externalCalls).toBe(1);
+    expect(store.commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('C2: retry after an ambiguous external outcome uses the same idempotency key', async () => {
+    const downstreamResults = new Map<string, { companyId: string }>();
+    const execute = vi.fn(async (request) => {
+      const existing = downstreamResults.get(request.idempotencyKey);
+      if (existing) return existing;
+      const result = { companyId: 'company-c2' };
+      downstreamResults.set(request.idempotencyKey, result);
+      return result;
+    });
+    const store: ToolExecutionStore = {
+      reserve: vi.fn()
+        .mockResolvedValueOnce({ kind: 'RESERVED', state: 'IN_PROGRESS' })
+        .mockResolvedValueOnce({ kind: 'RETRY', state: 'FAILED_RETRYABLE' }),
+      get: vi.fn(async () => null),
+      commit: vi.fn(async () => undefined),
+      fail: vi.fn(async () => undefined),
+    };
+    const service = new ToolExecutionService({ authorize: async () => true, execute, store });
+    const request = { tool, input: { name: 'Acme Capital' }, context, idempotencyKey: 'idem-c2' };
+
+    // Model the downstream operation having succeeded, while the first worker crashed before commit.
+    const firstExternalResult = await execute(request);
+    const recovered = await service.execute(request);
+
+    expect(firstExternalResult).toEqual(recovered.output);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls[0][0].idempotencyKey).toBe('idem-c2');
+    expect(execute.mock.calls[1][0].idempotencyKey).toBe('idem-c2');
+  });
+
+  it('C3: after the durable commit, a restarted worker replays without invoking the external effect', async () => {
+    const execute = vi.fn().mockResolvedValue({ companyId: 'company-c3' });
+    const store: ToolExecutionStore = {
+      reserve: vi.fn().mockResolvedValue({ kind: 'REPLAY', state: 'SUCCEEDED', output: { companyId: 'company-c3' } }),
+      get: vi.fn().mockResolvedValue({ companyId: 'company-c3' }),
+      commit: vi.fn(),
+      fail: vi.fn(),
+    };
+    const service = new ToolExecutionService({ authorize: async () => true, execute, store });
+
+    const result = await service.execute({
+      tool,
+      input: { name: 'Acme Capital' },
+      context,
+      idempotencyKey: 'idem-c3',
+    });
+
+    expect(result).toEqual({ output: { companyId: 'company-c3' }, replayed: true });
+    expect(execute).not.toHaveBeenCalled();
+    expect(store.commit).not.toHaveBeenCalled();
+  });
+
+  it('does not let an active reservation be stolen by another worker', async () => {
+    const store: ToolExecutionStore = {
+      reserve: vi.fn().mockResolvedValue({ kind: 'CONFLICT', state: 'IN_PROGRESS' }),
+      get: vi.fn(async () => null),
+      commit: vi.fn(async () => undefined),
+      fail: vi.fn(async () => undefined),
+    };
+    const execute = vi.fn();
+    const service = new ToolExecutionService({ authorize: async () => true, execute, store });
+
+    await expect(
+      service.execute({ tool, input: { name: 'Acme Capital' }, context, idempotencyKey: 'idem-active' }),
+    ).rejects.toBeInstanceOf(IdempotencyInProgressError);
+    expect(execute).not.toHaveBeenCalled();
   });
 });
