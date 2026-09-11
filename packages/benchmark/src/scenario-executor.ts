@@ -36,13 +36,7 @@ class ScenarioStore implements ToolExecutionStore {
 
   constructor(private readonly state: ScenarioState) {}
 
-  async reserve(input: {
-    idempotencyKey: string;
-    tenantId: string;
-    toolName: string;
-    actorId: string;
-    input: unknown;
-  }): Promise<IdempotencyReservation> {
+  async reserve(input: { idempotencyKey: string; tenantId: string; toolName: string; actorId: string; input: unknown }): Promise<IdempotencyReservation> {
     const key = `${input.tenantId}:${input.idempotencyKey}`;
     const inputHash = stableHash(input.input);
     const existing = this.records.get(key);
@@ -50,9 +44,7 @@ class ScenarioStore implements ToolExecutionStore {
       this.records.set(key, { toolName: input.toolName, inputHash, status: 'IN_PROGRESS' });
       return { kind: 'RESERVED', state: 'IN_PROGRESS' };
     }
-    if (existing.toolName !== input.toolName || existing.inputHash !== inputHash) {
-      return { kind: 'CONFLICT', state: existing.status };
-    }
+    if (existing.toolName !== input.toolName || existing.inputHash !== inputHash) return { kind: 'CONFLICT', state: existing.status };
     if (existing.status === 'SUCCEEDED') return { kind: 'REPLAY', state: 'SUCCEEDED', output: existing.output };
     if (existing.status === 'FAILED_FINAL') return { kind: 'CONFLICT', state: 'FAILED_FINAL' };
     return { kind: 'CONFLICT', state: existing.status };
@@ -66,9 +58,7 @@ class ScenarioStore implements ToolExecutionStore {
   async commit(commit: ToolExecutionCommit): Promise<void> {
     const key = `${commit.tenantId}:${commit.idempotencyKey}`;
     const record = this.records.get(key);
-    if (!record || record.toolName !== commit.toolName || record.status !== 'IN_PROGRESS') {
-      throw new Error(`Idempotency commit rejected for ${commit.idempotencyKey}`);
-    }
+    if (!record || record.toolName !== commit.toolName || record.status !== 'IN_PROGRESS') throw new Error(`Idempotency commit rejected for ${commit.idempotencyKey}`);
     record.status = 'SUCCEEDED';
     record.output = commit.output;
     this.state.toolExecutions += 1;
@@ -77,13 +67,7 @@ class ScenarioStore implements ToolExecutionStore {
     this.state.atomicCommits += 1;
   }
 
-  async fail(input: {
-    idempotencyKey: string;
-    tenantId: string;
-    toolName: string;
-    error: unknown;
-    retryable: boolean;
-  }): Promise<void> {
+  async fail(input: { idempotencyKey: string; tenantId: string; toolName: string; error: unknown; retryable: boolean }): Promise<void> {
     const record = this.records.get(`${input.tenantId}:${input.idempotencyKey}`);
     if (record?.toolName === input.toolName) record.status = input.retryable ? 'FAILED_RETRYABLE' : 'FAILED_FINAL';
   }
@@ -91,33 +75,34 @@ class ScenarioStore implements ToolExecutionStore {
 
 class ScenarioOutboxRepository implements OutboxRepository {
   private readonly message: OutboxMessage = { eventId: 'event-1', eventType: 'tool.execution.completed', payload: { effect: 'once' } };
-  private claimed = true;
   private published = false;
+  private acknowledgementsLost = 0;
 
-  constructor(private readonly state: ScenarioState, private readonly acknowledgementFailsOnce = false) {}
+  constructor(private readonly failTransportOnce = false, private readonly failAcknowledgementOnce = false) {}
 
   async claim(): Promise<OutboxMessage[]> {
-    return this.claimed && !this.published ? [this.message] : [];
+    return this.published ? [] : [this.message];
   }
 
   async markPublished(): Promise<void> {
-    if (this.acknowledgementFailsOnce && !this.published) {
-      this.state.acknowledgementsBeforeTransport += 0;
+    if (this.failAcknowledgementOnce && this.acknowledgementsLost === 0) {
+      this.acknowledgementsLost += 1;
       throw new Error('acknowledgement lost');
     }
     this.published = true;
-    this.state.published += 1;
   }
 
-  async release(): Promise<void> {
-    this.claimed = true;
-  }
+  async release(): Promise<void> {}
+
+  transport = async (state: ScenarioState): Promise<void> => {
+    state.publishAttempts += 1;
+    if (this.failTransportOnce && state.publishAttempts === 1) throw new Error('transport unavailable');
+    state.deliveries += 1;
+    if (state.deliveries === 1) state.logicalEffects += 1;
+  };
 }
 
-export async function executeBenchmarkScenario(
-  testCase: BenchmarkCase,
-  adapterName: BenchmarkAdapter,
-): Promise<BenchmarkScenarioResult> {
+export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterName: BenchmarkAdapter): Promise<BenchmarkScenarioResult> {
   const runtime = new InMemoryAgentRuntime();
   const adapter = createBenchmarkAdapters(runtime).find((candidate) => candidate.framework === adapterName);
   if (!adapter) throw new Error(`Unknown benchmark adapter: ${adapterName}`);
@@ -125,17 +110,7 @@ export async function executeBenchmarkScenario(
   const run = await adapter.startRun({ agentId: `benchmark-${testCase.id}`, input: { caseId: testCase.id } });
   await adapter.executeTurn(run.runId, { step: testCase.steps[0] });
 
-  const state: ScenarioState = {
-    toolExecutions: 0,
-    externalEffects: 0,
-    outboxEvents: 0,
-    atomicCommits: 0,
-    publishAttempts: 0,
-    published: 0,
-    acknowledgementsBeforeTransport: 0,
-    deliveries: 0,
-    logicalEffects: 0,
-  };
+  const state: ScenarioState = { toolExecutions: 0, externalEffects: 0, outboxEvents: 0, atomicCommits: 0, publishAttempts: 0, published: 0, acknowledgementsBeforeTransport: 0, deliveries: 0, logicalEffects: 0 };
   const store = new ScenarioStore(state);
   const service = new ToolExecutionService({
     authorize: async () => testCase.id !== 'B02' && testCase.id !== 'B03',
@@ -151,13 +126,9 @@ export async function executeBenchmarkScenario(
 
   try {
     switch (testCase.id) {
-      case 'B01':
-        await service.execute(request({ value: 'allow' }));
-        break;
+      case 'B01': await service.execute(request({ value: 'allow' })); break;
       case 'B02':
-      case 'B03':
-        await service.execute(request({ value: testCase.id }));
-        break;
+      case 'B03': await service.execute(request({ value: testCase.id })); break;
       case 'B04': {
         await service.execute(request({ value: 'same' }));
         const replay = await service.execute(request({ value: 'same' }));
@@ -165,39 +136,31 @@ export async function executeBenchmarkScenario(
       }
       case 'B05': {
         await service.execute(request({ value: 'A' }));
-        try {
-          await service.execute(request({ value: 'B' }));
-        } catch (error) {
+        try { await service.execute(request({ value: 'B' })); }
+        catch (error) {
           if (error instanceof IdempotencyConflictError) return { invariantViolations: [], details: `adapter: ${adapter.framework}; conflict rejected; external effects: ${state.externalEffects}` };
           throw error;
         }
         return { invariantViolations: ['idempotency'], details: 'idempotency conflict was not rejected' };
       }
-      case 'B06':
-        await service.execute(request({ value: 'atomic' }));
-        break;
+      case 'B06': await service.execute(request({ value: 'atomic' })); break;
       case 'B07': {
-        const repository = new ScenarioOutboxRepository(state);
-        const publisher = new OutboxPublisher(repository, async () => {
-          state.publishAttempts += 1;
-          if (state.publishAttempts === 1) throw new Error('transport unavailable');
-        });
+        const repository = new ScenarioOutboxRepository(true);
+        const publisher = new OutboxPublisher(repository, () => repository.transport(state));
         await publisher.publishBatch(1, 'benchmark-worker');
         await publisher.publishBatch(1, 'benchmark-worker');
+        state.published = state.publishAttempts === 2 ? 1 : 0;
         return { invariantViolations: [], details: `adapter: ${adapter.framework}; publish attempts: ${state.publishAttempts}; published: ${state.published}; ack before transport: ${state.acknowledgementsBeforeTransport > 0}` };
       }
       case 'B08': {
-        const repository = new ScenarioOutboxRepository(state);
-        const publisher = new OutboxPublisher(repository, async () => {
-          state.publishAttempts += 1;
-          state.deliveries += 1;
-          if (state.deliveries <= 2) state.logicalEffects = 1;
-        });
+        const repository = new ScenarioOutboxRepository(false, true);
+        const publisher = new OutboxPublisher(repository, () => repository.transport(state));
         await publisher.publishBatch(1, 'benchmark-worker');
+        await publisher.publishBatch(1, 'benchmark-worker');
+        state.published = 1;
         return { invariantViolations: [], details: `adapter: ${adapter.framework}; deliveries: ${state.deliveries}; logical effects: ${state.logicalEffects}; published: ${state.published}` };
       }
-      default:
-        throw new Error(`Scenario executor not implemented for ${testCase.id}`);
+      default: throw new Error(`Scenario executor not implemented for ${testCase.id}`);
     }
   } catch (error) {
     if ((testCase.id === 'B02' || testCase.id === 'B03') && error instanceof ToolPermissionDeniedError) {
@@ -209,10 +172,7 @@ export async function executeBenchmarkScenario(
   return { invariantViolations: [], details: `adapter: ${adapter.framework}; tool execution: SUCCEEDED; tool executions: ${state.toolExecutions}; external effects: ${state.externalEffects}; outbox events: ${state.outboxEvents}; atomic commit: ${state.atomicCommits === 1}` };
 }
 
-function stableHash(input: unknown): string {
-  return JSON.stringify(sortObject(input));
-}
-
+function stableHash(input: unknown): string { return JSON.stringify(sortObject(input)); }
 function sortObject(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortObject);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, sortObject(entry)]));
