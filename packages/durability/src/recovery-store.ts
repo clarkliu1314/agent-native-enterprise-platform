@@ -1,4 +1,4 @@
-import type { Pool, PoolClient } from 'pg';
+import type { Pool } from 'pg';
 import type { ToolExecutionRequest } from '@agent-native/tool-runtime';
 import type { RecoveryState } from './recovery';
 
@@ -40,6 +40,14 @@ export class RecoveryCandidateStore {
 
   async migrate(): Promise<void> {
     await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS agent_runs (
+        run_id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        input JSONB NOT NULL,
+        version INTEGER NOT NULL,
+        metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+      );
       ALTER TABLE agent_runs
         ADD COLUMN IF NOT EXISTS recovery_state TEXT NOT NULL DEFAULT 'IN_PROGRESS',
         ADD COLUMN IF NOT EXISTS recovery_attempts INTEGER NOT NULL DEFAULT 0,
@@ -108,7 +116,7 @@ export class RecoveryCandidateStore {
         owner,
         leaseToken,
         leaseExpiresAt,
-        attempts: row.recovery_attempts,
+        attempts: Number(row.recovery_attempts),
         request: row.recovery_request as ToolExecutionRequest,
         state: row.recovery_state as RecoveryState,
       };
