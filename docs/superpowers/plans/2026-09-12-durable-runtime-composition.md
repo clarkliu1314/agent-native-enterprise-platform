@@ -44,6 +44,7 @@
 - Create `apps/worker/src/index.ts`: worker composition root, claim/lease/heartbeat, and runtime execution.
 - Create `apps/recovery/src/index.ts`: recovery composition root.
 - Create `apps/outbox-publisher/src/index.ts`: outbox publisher composition root.
+- Create `packages/queue`: Redis Streams implementation of the framework-neutral `QueuePublisher`/`QueueConsumer` ports.
 - Create `apps/*/package.json` and minimal build/typecheck configuration where required by the workspace.
 - Extend `docker-compose.yml` only after the real runtime process contracts exist.
 - Modify this plan and the main plan at each completed implementation gate.
@@ -61,6 +62,7 @@
 - Added a regression API test locking sync-deadline -> 202 behavior.
 - Recovery now serializes reclaimed ownership as `{ runId, owner, fencingToken }` on the internal `agent.run` queue contract; Worker can execute an already-reclaimed RUNNING row through an internal fenced execution boundary without violating the six-state FSM.
 - Added focused recovery/worker tests for reclaimed fencing handoff and ordinary queue execution.
+- Added `@agent-native/queue` with Redis Streams publisher/consumer implementations using consumer groups, acknowledgements, and pending-entry reclamation; Worker, Recovery, and Outbox composition roots now expose Redis-backed constructors.
 - The latest implementation commits are awaiting a new GitHub Actions run; no new green claim is made beyond Run #354.
 
 ## Task 1: Repository and transaction primitives
@@ -102,6 +104,7 @@
 - [ ] Write RED tests for outbox claim, publish success, retry/backoff, duplicate delivery, and worker lease/heartbeat behavior.
 - [x] Implement publisher with transactional claim, delivery, retry scheduling, and published marking.
 - [x] Implement Worker composition root using `RuntimeFacade`, queue delivery, bounded execution, and fenced lease heartbeat.
+- [x] Add Redis Streams publisher/consumer composition wiring for durable queue delivery.
 - [ ] Verify worker restart and duplicate-delivery tests.
 - [ ] Commit `feat(runtime): add worker and outbox composition roots`.
 
@@ -117,6 +120,7 @@
 
 - [ ] Write RED process-contract tests proving API, Worker, Recovery, and Outbox Publisher use separate composition roots while sharing the same Runtime implementation.
 - [x] Implement minimal composition roots for Worker, Recovery, and Publisher with explicit dependency injection.
+- [x] Wire Redis-backed constructors into Worker, Recovery, and Outbox Publisher roots.
 - [ ] Add Compose services only for the real durable processes; keep the Vercel API stateless.
 - [ ] Verify Compose health, startup ordering, worker consumption, recovery fallback, and publisher retry.
 - [ ] Commit `feat(runtime): add durable process composition roots`.
