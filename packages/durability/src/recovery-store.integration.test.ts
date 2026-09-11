@@ -17,7 +17,7 @@ describe('RecoveryCandidateStore PostgreSQL contract', () => {
 
   beforeAll(() => store.migrate());
   beforeEach(async () => {
-    await pool.query('DELETE FROM agent_runs WHERE run_id = $1', ['recovery-1']);
+    await pool.query('DELETE FROM agent_runs WHERE run_id LIKE $1', ['recovery-%']);
     await pool.query(
       `INSERT INTO agent_runs (run_id, agent_id, state, input, version, metadata, recovery_state, recovery_attempts, next_attempt_at)
        VALUES ('recovery-1', 'investment-agent', 'RUNNING', '{}', 0, $1::jsonb, 'IN_PROGRESS', 0, $2)`,
@@ -30,6 +30,21 @@ describe('RecoveryCandidateStore PostgreSQL contract', () => {
     const candidates = await store.findRecoverableCandidates(10, now);
     expect(candidates.map((candidate) => candidate.runId)).toEqual(['recovery-1']);
     expect(candidates[0]?.request.idempotencyKey).toBe('idem-recovery-1');
+  });
+
+  it('does not turn ordinary historical runs into recovery candidates during migration', async () => {
+    await pool.query(`
+      INSERT INTO agent_runs (run_id, agent_id, state, input, version, metadata)
+      VALUES ('recovery-historical', 'investment-agent', 'SUCCEEDED', '{}', 0, $1::jsonb)
+    `, [JSON.stringify({})]);
+
+    await store.migrate();
+
+    const row = await pool.query(
+      `SELECT recovery_state FROM agent_runs WHERE run_id = 'recovery-historical'`,
+    );
+    expect(row.rows[0].recovery_state).toBe('NONE');
+    expect((await store.findRecoverableCandidates(10, now)).map((candidate) => candidate.runId)).toEqual(['recovery-1']);
   });
 
   it('allows exactly one concurrent owner to claim a candidate', async () => {
@@ -63,6 +78,39 @@ describe('RecoveryCandidateStore PostgreSQL contract', () => {
     expect(await store.reclaimExpiredRecoveryCandidates(now)).toBe(1);
     const lease = await store.claimRecoveryCandidate('recovery-1', 'worker-live', 'live-token', 30_000, now);
     expect(lease?.owner).toBe('worker-live');
+  });
+
+  it('rejects stale owners from completing after a lease has been replaced', async () => {
+    const lease = await store.claimRecoveryCandidate('recovery-1', 'worker-a', 'token-a', 30_000, now);
+    expect(lease).not.toBeNull();
+    await pool.query(
+      `UPDATE agent_runs
+       SET recovery_owner = 'worker-b', recovery_lease_token = 'token-b', recovery_lease_expires_at = $2
+       WHERE run_id = $1`,
+      ['recovery-1', new Date(now.getTime() + 30_000)],
+    );
+
+    expect(await store.completeRecovery('recovery-1', 'worker-a', 'token-a')).toBe(false);
+    const row = await pool.query(
+      `SELECT recovery_state, recovery_owner, recovery_lease_token FROM agent_runs WHERE run_id = 'recovery-1'`,
+    );
+    expect(row.rows[0]).toMatchObject({ recovery_state: 'IN_PROGRESS', recovery_owner: 'worker-b', recovery_lease_token: 'token-b' });
+  });
+
+  it('never rediscovers terminal states', async () => {
+    await pool.query(`
+      UPDATE agent_runs
+      SET recovery_state = 'FAILED_FINAL', next_attempt_at = $2
+      WHERE run_id = 'recovery-1'
+    `, [now]);
+    expect(await store.findRecoverableCandidates(10, now)).toEqual([]);
+
+    await pool.query(`
+      UPDATE agent_runs
+      SET recovery_state = 'SUCCEEDED', next_attempt_at = $2
+      WHERE run_id = 'recovery-1'
+    `, [now]);
+    expect(await store.findRecoverableCandidates(10, now)).toEqual([]);
   });
 
   it('applies bounded exponential backoff and terminal classification', async () => {
