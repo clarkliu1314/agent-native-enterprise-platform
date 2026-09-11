@@ -80,7 +80,7 @@ describe('benchmark scenario executor', () => {
   it.each(benchmarkAdapters)('does not duplicate the logical effect for B12 crash-after-outbox through the %s adapter', async (adapter) => {
     const result = await executeBenchmarkScenario(benchmarkCases[11], adapter);
 
-    expect(result.invariantViolations, result.details).toEqual([]);
+    expect(result.invariantViolations).toEqual([]);
     expect(result.details).toContain('deliveries: 2');
     expect(result.details).toContain('logical effects: 1');
     expect(result.details).toContain('recovered: 1');
