@@ -1,23 +1,23 @@
 /**
  * Framework-neutral tool execution boundary.
  *
- * This module intentionally knows nothing about AgentScope, LangGraph, Eino, or Mastra.
- * Framework adapters call this service through the application runtime contract so that
- * authorization, idempotency, and event publication cannot accidentally be bypassed.
+ * AgentScope/LangGraph/Eino/Mastra adapters must enter the application through this
+ * service instead of invoking effectful tools directly. That keeps authorization,
+ * idempotency, and outbox rules in one auditable location.
  */
 
 export interface ToolDefinition {
-  /** Stable enterprise tool name, e.g. `crm.create_company`. */
+  /** Stable enterprise tool name, for example `crm.create_company`. */
   name: string;
   description: string;
-  /** Marks whether invoking the tool can change external or durable state. */
+  /** True when invocation can mutate external or durable state. */
   sideEffect: boolean;
 }
 
 export interface ToolExecutionContext {
   actorId: string;
   tenantId: string;
-  /** Permission strings resolved by the policy layer for this actor/run. */
+  /** Permission strings already resolved by the policy layer. */
   permissions: string[];
 }
 
@@ -25,14 +25,13 @@ export interface ToolExecutionRequest {
   tool: ToolDefinition;
   input: unknown;
   context: ToolExecutionContext;
-  /** Caller-owned stable key. Retries of the same logical command must reuse it. */
+  /** Stable caller-owned key reused for every retry of one logical command. */
   idempotencyKey: string;
 }
 
 export interface ToolExecutionResult {
-  /** The actual tool result returned to the Agent Runtime. */
   output: unknown;
-  /** True when the result came from an earlier idempotent execution. */
+  /** True when this call reused a previously completed logical operation. */
   replayed: boolean;
 }
 
@@ -45,19 +44,25 @@ export interface ToolExecutionOutboxEvent {
   output: unknown;
 }
 
+export interface ToolExecutionCommit {
+  idempotencyKey: string;
+  toolName: string;
+  tenantId: string;
+  actorId: string;
+  output: unknown;
+  outboxEvent: ToolExecutionOutboxEvent;
+}
+
 export interface ToolExecutionDependencies {
-  /**
-   * Authorization is deliberately the first dependency invoked. For a side-effecting
-   * tool, a false result must prevent any call to `execute`.
-   */
+  /** Must be evaluated before any side effect is attempted. */
   authorize: (request: ToolExecutionRequest) => Promise<boolean>;
   /** Performs the actual external operation. */
   execute: (request: ToolExecutionRequest) => Promise<unknown>;
   /**
-   * Publishes the durable event after a successful execution. A future PostgreSQL-backed
-   * implementation will execute this in the same transaction as the idempotency record.
+   * Atomic durability boundary: persist the idempotency result and outbox event together.
+   * A PostgreSQL implementation will perform both writes in one database transaction.
    */
-  publishOutbox?: (event: ToolExecutionOutboxEvent) => Promise<void>;
+  persistResultAndPublishOutbox?: (commit: ToolExecutionCommit) => Promise<void>;
 }
 
 export class ToolPermissionDeniedError extends Error {
@@ -68,50 +73,81 @@ export class ToolPermissionDeniedError extends Error {
 }
 
 /**
- * Minimal reference implementation of the execution semantics.
+ * Reference execution service.
  *
- * The in-memory idempotency map is intentionally small and deterministic for unit tests.
- * Production persistence is introduced behind the same contract so that the Agent Runtime
- * does not need to know whether it is running against memory or PostgreSQL.
+ * The pipeline is intentionally explicit:
+ *   authorize -> idempotency -> execute -> persist result + outbox
+ *
+ * The Map is a reference store for unit tests only. Production will supply a durable
+ * persistence implementation; keeping that implementation behind the dependency makes
+ * the runtime contract independent from any Agent framework or database vendor.
  */
 export class ToolExecutionService {
   private readonly results = new Map<string, ToolExecutionResult>();
+  private readonly inFlight = new Map<string, Promise<ToolExecutionResult>>();
 
   constructor(private readonly dependencies: ToolExecutionDependencies) {}
 
   async execute(request: ToolExecutionRequest): Promise<ToolExecutionResult> {
-    // Authorization must precede the idempotency lookup as well as the external effect:
-    // otherwise an unauthorized retry could learn or reuse another actor's result.
-    const authorized = await this.dependencies.authorize(request);
-    if (!authorized) {
+    // Authorization is checked before idempotency lookup so an unauthorized actor cannot
+    // probe or reuse a result belonging to another actor/tenant.
+    if (!(await this.dependencies.authorize(request))) {
       throw new ToolPermissionDeniedError(request.tool.name);
     }
 
-    // A successful prior result is the source of truth for a retry. This is what prevents
-    // an Agent retry after a timeout from issuing the external command twice.
     const existing = this.results.get(request.idempotencyKey);
     if (existing) {
       return { ...existing, replayed: true };
     }
 
-    const output = await this.dependencies.execute(request);
-    const result: ToolExecutionResult = { output, replayed: false };
+    // Close the common in-process race where two identical Agent retries arrive together.
+    // Cross-process uniqueness is a database responsibility, not an in-memory one.
+    const running = this.inFlight.get(request.idempotencyKey);
+    if (running) {
+      const result = await running;
+      return { ...result, replayed: true };
+    }
 
-    // The outbox callback is invoked only after the external operation has succeeded.
-    // In the durable implementation this write must be part of the same DB transaction
-    // that records the idempotency result; keeping it behind a dependency makes that
-    // transaction boundary explicit rather than hiding it inside an Agent framework.
-    if (this.dependencies.publishOutbox) {
-      await this.dependencies.publishOutbox({
+    const execution = this.executeOnce(request);
+    this.inFlight.set(request.idempotencyKey, execution);
+
+    try {
+      return await execution;
+    } finally {
+      this.inFlight.delete(request.idempotencyKey);
+    }
+  }
+
+  private async executeOnce(request: ToolExecutionRequest): Promise<ToolExecutionResult> {
+    // A failed external operation reaches no persistence callback, so it cannot emit a
+    // false successful completion event.
+    const output = await this.dependencies.execute(request);
+
+    const commit: ToolExecutionCommit = {
+      idempotencyKey: request.idempotencyKey,
+      toolName: request.tool.name,
+      tenantId: request.context.tenantId,
+      actorId: request.context.actorId,
+      output,
+      outboxEvent: {
         type: 'tool.execution.completed',
         idempotencyKey: request.idempotencyKey,
         toolName: request.tool.name,
         tenantId: request.context.tenantId,
         actorId: request.context.actorId,
         output,
-      });
+      },
+    };
+
+    // This callback is the explicit transaction boundary. The durable implementation must
+    // commit the idempotency record and outbox row together; splitting those writes creates
+    // a crash window in which a retry can duplicate an external side effect or an event can
+    // be lost.
+    if (this.dependencies.persistResultAndPublishOutbox) {
+      await this.dependencies.persistResultAndPublishOutbox(commit);
     }
 
+    const result: ToolExecutionResult = { output, replayed: false };
     this.results.set(request.idempotencyKey, result);
     return result;
   }
