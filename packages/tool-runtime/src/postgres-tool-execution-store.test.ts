@@ -68,4 +68,30 @@ describe('PostgresToolExecutionStore', () => {
     expect(Number(rows.rows[0].idempotency_count)).toBe(1);
     expect(Number(rows.rows[0].outbox_count)).toBe(1);
   });
+
+  it('does not allow one tenant to read another tenant\'s idempotency result', async () => {
+    await store.commit({
+      idempotencyKey: 'pg-tenant-isolation',
+      toolName: 'crm.create_company',
+      tenantId: 'fund-1',
+      actorId: 'user-1',
+      output: { companyId: 'company-secret' },
+      outboxEvent: {
+        type: 'tool.execution.completed',
+        idempotencyKey: 'pg-tenant-isolation',
+        toolName: 'crm.create_company',
+        tenantId: 'fund-1',
+        actorId: 'user-1',
+        output: { companyId: 'company-secret' },
+      },
+    });
+
+    // A raw key lookup is intentionally being replaced by a scoped lookup in the
+    // implementation. This test prevents cross-tenant replay/data disclosure.
+    expect(await store.get({
+      idempotencyKey: 'pg-tenant-isolation',
+      tenantId: 'fund-2',
+      toolName: 'crm.create_company',
+    })).toBeNull();
+  });
 });
