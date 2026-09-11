@@ -14,6 +14,7 @@ class FakeRepos implements DurableRepositories {
   idempotency?: IdempotencyRecord;
   events: RuntimeEventView[] = [];
   checkpoints: CheckpointEnvelope[] = [];
+  failAtomicTransition = false;
   async admitRun(input: { command: CreateRunCommand; commandHash: string; runId: string; eventId: string }) { this.idempotency = { key: input.command.idempotencyKey ?? `run:${input.runId}`, commandHash: input.commandHash, runId: input.runId }; this.current = { ...this.current, runId: input.runId, agentId: input.command.agentId, input: input.command.input }; return this.current; }
   async getRun(id: string) { return id === this.current.runId ? this.current : null; }
   async getIdempotency(key: string) { return this.idempotency?.key === key ? this.idempotency : null; }
@@ -21,8 +22,21 @@ class FakeRepos implements DurableRepositories {
   async claimRun() { this.current = { ...this.current, state: 'RUNNING', fencingToken: this.current.fencingToken + 1n, attempt: this.current.attempt + 1 }; return { run: this.current, fencingToken: this.current.fencingToken } as RunClaim; }
   async renewLease() { return true; }
   async transitionRun(input: { runId: string; fencingToken?: bigint; from: RunView['state']; to: RunView['state']; owner?: string; error?: string }) { expect(this.current.state).toBe(input.from); this.current = { ...this.current, state: input.to }; return this.current; }
-  async appendEvent(input: { runId: string; type: string; payload: unknown }) { const event = { eventId: `event-${this.events.length + 1}`, runId: input.runId, sequence: BigInt(this.events.length + 1), type: input.type, payload: input.payload, createdAt: new Date(0).toISOString() }; this.events.push(event); return event; }
-  async appendEventAndOutbox(input: { runId: string; type: string; payload: unknown }) { return this.appendEvent(input); }
+  async transitionRunAndEmit(input: { runId: string; fencingToken?: bigint; from: RunView['state']; to: RunView['state']; owner?: string; error?: string; eventType: string; eventPayload: unknown; topic: string }) {
+    const previous = this.current;
+    expect(previous.state).toBe(input.from);
+    this.current = { ...previous, state: input.to };
+    try {
+      if (this.failAtomicTransition) throw new Error('simulated event/outbox failure');
+      await this.appendEvent({ runId: input.runId, type: input.eventType, payload: input.eventPayload, fencingToken: input.fencingToken });
+      return this.current;
+    } catch (error) {
+      this.current = previous;
+      throw error;
+    }
+  }
+  async appendEvent(input: { runId: string; type: string; payload: unknown; fencingToken?: bigint }) { const event = { eventId: `event-${this.events.length + 1}`, runId: input.runId, sequence: BigInt(this.events.length + 1), type: input.type, payload: input.payload, createdAt: new Date(0).toISOString() }; this.events.push(event); return event; }
+  async appendEventAndOutbox(input: { runId: string; type: string; payload: unknown; topic: string }) { return this.appendEvent(input); }
   async listEvents() { return this.events; }
   async createOutbox() {}
   async saveCheckpoint(cp: CheckpointEnvelope) { this.checkpoints.push(cp); }
@@ -68,5 +82,14 @@ describe('DurableRuntimeService', () => {
     const result = await service.executeRunBounded(repos.current.runId, 'worker-1', new Date(Date.now() + 1000));
     expect(result.terminal).toBe(true);
     expect(result.run.state).toBe('SUCCEEDED');
+  });
+
+  it('rolls back the lifecycle transition when event/outbox persistence fails', async () => {
+    const repos = new FakeRepos();
+    repos.failAtomicTransition = true;
+    const service = new DurableRuntimeService(repos, { adapter });
+    await expect(service.cancelRun(repos.current.runId, 'user requested')).rejects.toThrow('simulated event/outbox failure');
+    expect(repos.current.state).toBe('QUEUED');
+    expect(repos.events).toHaveLength(0);
   });
 });
