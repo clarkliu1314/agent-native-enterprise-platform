@@ -79,16 +79,20 @@
 
 ### Task 9: Vercel deployment boundary
 
-**Status:** In progress — the request-boundary package, provider-neutral LLM gateway contract, stateless API handler, static worker-dependency safety test, deployment documentation, and API build contract are implemented. Run #184 passed against the prior boundary revision. A new CI verification is required for the explicit API typecheck/build steps before this task is closed.
+**Status:** Complete — package/API boundary, provider-neutral LLM gateway contract, stateless request handler, static worker-dependency safety contract, deployment documentation, explicit API typecheck/build contract, and CI verification are all passing.
 
 - [x] Keep durable worker/database operations outside request-lifetime assumptions.
 - [x] Route model calls through a provider-agnostic LLM gateway boundary.
 - [x] Document environment variables, deployment topology, and failure semantics.
 - [x] Add API typecheck/build commands and a build-contract test.
-- [ ] Verify the revised CI workflow with API typecheck/build passes.
-- [ ] Close Task 9 after focused tests, full tests, typecheck, API build, Compose validation, and CI all pass.
+- [x] Verify the revised CI workflow with API typecheck/build passes (Run #189).
+- [x] Verify focused boundary tests, full test suite, repository typecheck, API typecheck/build, and Compose smoke/configuration (Run #189).
 
 ### Task 10: CI and verification
-- [ ] Run formatting, type checking, unit tests, integration tests, and benchmark contract tests.
-- [ ] Require all contract and safety tests before merge.
-- [ ] Publish benchmark artifacts.
+
+**Status:** In progress — CI now explicitly verifies repository typecheck, API typecheck/build, deployment-boundary tests, full tests, and Compose smoke. Remaining work is benchmark result artifact publication and final merge-gate hardening.
+
+- [x] Run type checking, unit/integration tests, and deployment-boundary contract tests in CI.
+- [ ] Add/verify formatting checks if the repository adopts a formatter contract.
+- [ ] Require all benchmark safety contracts before merge.
+- [ ] Publish deterministic benchmark artifacts.
