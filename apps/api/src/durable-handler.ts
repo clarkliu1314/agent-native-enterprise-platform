@@ -1,14 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import type { CreateRunCommand, RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { IdempotencyConflictError, RunNotFoundError } from '@agent-native/runtime';
 
-export interface DurableHandlerOptions {
-  syncBudgetMs?: number;
-  owner?: string;
-}
+export interface DurableHandlerOptions { syncBudgetMs?: number; owner?: string; }
 
 export function createDurableHandler(runtime: RuntimeFacade, options: DurableHandlerOptions = {}) {
   const syncBudgetMs = options.syncBudgetMs ?? 8_000;
-  const owner = options.owner ?? `api-${crypto.randomUUID()}`;
+  const owner = options.owner ?? `api-${randomUUID()}`;
 
   return async function handler(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -17,8 +15,7 @@ export function createDurableHandler(runtime: RuntimeFacade, options: DurableHan
         const body = await request.json() as { agentId?: unknown; input?: unknown; metadata?: unknown; executionMode?: unknown };
         if (typeof body.agentId !== 'string' || !body.agentId || !('input' in body)) return Response.json({ error: 'invalid_request' }, { status: 400 });
         const executionMode = body.executionMode === 'sync' ? 'sync' : 'async';
-        const idempotencyKey = request.headers.get('idempotency-key') ?? undefined;
-        const command: CreateRunCommand = { agentId: body.agentId, input: body.input, metadata: isRecord(body.metadata) ? body.metadata : undefined, executionMode, idempotencyKey };
+        const command: CreateRunCommand = { agentId: body.agentId, input: body.input, metadata: isRecord(body.metadata) ? body.metadata : undefined, executionMode, idempotencyKey: request.headers.get('idempotency-key') ?? undefined };
         const created = await runtime.createRun(command);
         if (executionMode === 'sync' && !created.replayed) {
           const result = await runtime.executeRunBounded(created.run.runId, owner, new Date(Date.now() + syncBudgetMs));
@@ -26,7 +23,6 @@ export function createDurableHandler(runtime: RuntimeFacade, options: DurableHan
         }
         return Response.json(created.run, { status: created.run.state === 'SUCCEEDED' || created.run.state === 'FAILED' || created.run.state === 'CANCELLED' ? 200 : 202 });
       }
-
       const match = url.pathname.match(/^\/runs\/([^/]+)$/);
       if (request.method === 'GET' && match) return Response.json(await runtime.getRun(decodeURIComponent(match[1])), { status: 200 });
       return Response.json({ error: 'not_found' }, { status: 404 });
