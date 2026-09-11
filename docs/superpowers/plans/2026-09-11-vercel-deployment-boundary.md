@@ -97,3 +97,9 @@
 - Run #184 — CI success for the initial Vercel boundary revision.
 - Run #189 — CI success for commit `b11930d5926263445787cdd81eb2bcb776913763`; test job passed repository typecheck, API typecheck, API build, deployment-boundary tests, and full test suite; Compose job passed configuration, startup, benchmark/worker/migration exit assertions, and teardown.
 - Subsequent documentation-only status commits are not treated as additional runtime verification claims.
+
+## CI retrigger checkpoint
+
+- The latest benchmark branch head had no workflow run attached to the current commit after the previous CI event, so this documentation-only checkpoint intentionally changes the branch while preserving all runtime semantics.
+- This commit is expected to trigger the existing `pull_request` CI workflow again; its result must be treated as fresh evidence for the current branch head, not retroactively attributed to Run #189.
+- No implementation status is changed by this checkpoint. The unchecked composition-root item remains intentionally deferred until a real durable runtime/repository composition exists.
