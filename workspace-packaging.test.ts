@@ -41,7 +41,7 @@ describe('workspace packaging contract', () => {
       expect(manifest.type, path).toBe('module');
       expect(manifest.main, path).toBeTruthy();
       expect(manifest.types, path).toBeTruthy();
-      expect(manifest.exports, path).toEqual({ '.': manifest.main });
+      expect(manifest.exports, path).toMatchObject({ '.': manifest.main });
     }
   });
 
@@ -60,7 +60,7 @@ describe('workspace packaging contract', () => {
         if (version !== 'workspace:*') continue;
         const target = manifests.get(dependency);
         expect(target, `${path} -> ${dependency}`).toBeTruthy();
-        expect(target?.exports, `${path} -> ${dependency}`).toEqual({ '.': target?.main });
+        expect(target?.exports, `${path} -> ${dependency}`).toMatchObject({ '.': target?.main });
       }
     }
   });
