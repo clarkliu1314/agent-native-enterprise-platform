@@ -113,7 +113,8 @@ describe('benchmark scenario executor', () => {
   it.each(benchmarkAdapters)('allows only one winner for B16 concurrent recovery through the %s adapter', async (adapter) => {
     const result = await executeBenchmarkScenario(benchmarkCases[15], adapter);
     expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('successful claims: 1');
+    expect(result.details).toContain('claim winners: 1');
+    expect(result.details).toContain('terminal completions: 1');
     expect(result.details).toContain('external effects: 1');
   });
 });
