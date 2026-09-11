@@ -6,6 +6,11 @@ ALTER TABLE agent_runs
   ADD COLUMN IF NOT EXISTS recovery_lease_token TEXT,
   ADD COLUMN IF NOT EXISTS recovery_lease_expires_at TIMESTAMPTZ;
 
+ALTER TABLE agent_runs
+  ALTER COLUMN recovery_state SET DEFAULT 'NONE',
+  ALTER COLUMN recovery_attempts SET DEFAULT 0,
+  ALTER COLUMN next_attempt_at SET DEFAULT NOW();
+
 CREATE INDEX IF NOT EXISTS agent_runs_recovery_candidates_idx
   ON agent_runs (next_attempt_at, run_id)
   WHERE recovery_state IN ('IN_PROGRESS', 'FAILED_RETRYABLE');
