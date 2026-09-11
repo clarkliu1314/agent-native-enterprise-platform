@@ -82,4 +82,18 @@ describe('RecoveryWorker', () => {
     }]);
     expect(store.recordRecoveryFailure).toHaveBeenCalledWith(expect.objectContaining({ runId: 'run-1', owner: 'worker-1', leaseToken: 'token-1', retryable: true, error }));
   });
+
+  it('treats a completion race as recoverable work instead of acknowledging a lost lease', async () => {
+    const store = storeMock();
+    vi.mocked(store.completeRecovery).mockResolvedValue(false);
+    const coordinator = { recover: vi.fn().mockResolvedValue(undefined) } as unknown as RecoveryCoordinator;
+    const worker = new RecoveryWorker(store, coordinator, 'worker-1');
+
+    const result = await worker.runOnce(new Date('2026-09-11T00:00:00.000Z'));
+
+    expect(result).toMatchObject({ recovered: 0, skipped: 0, failed: 1 });
+    expect(coordinator.recover).toHaveBeenCalledWith({ request, state: 'IN_PROGRESS' });
+    expect(store.recordRecoveryFailure).toHaveBeenCalledWith(expect.objectContaining({ runId: 'run-1', owner: 'worker-1', leaseToken: 'token-1', retryable: true }));
+    expect(result.outcomes[0]?.classification).toBe('FAILED_RETRYABLE');
+  });
 });
