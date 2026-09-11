@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ToolExecutionService } from '@agent-native/tool-runtime';
 import type { RecoveryCandidateStore, RecoveryLease } from '@agent-native/durability';
 import { RecoveryCoordinator } from '@agent-native/durability';
 import { RecoveryWorker } from './recovery-worker';
@@ -19,6 +20,7 @@ function storeMock(): RecoveryCandidateStore {
   return {
     findRecoverableCandidates: vi.fn().mockResolvedValue([{ runId: lease.runId }]),
     claimRecoveryCandidate: vi.fn().mockResolvedValue(lease),
+    renewRecoveryLease: vi.fn().mockResolvedValue(true),
     reclaimExpiredRecoveryCandidates: vi.fn().mockResolvedValue(0),
     completeRecovery: vi.fn().mockResolvedValue(true),
     recordRecoveryFailure: vi.fn().mockResolvedValue('FAILED_RETRYABLE'),
@@ -30,11 +32,12 @@ describe('RecoveryWorker', () => {
   it('recovers only candidates it successfully claims and acknowledges completion', async () => {
     const store = storeMock();
     const execute = vi.fn().mockResolvedValue({ reservationId: 'res-1' });
-    const coordinator = new RecoveryCoordinator({
+    const service = new ToolExecutionService({
       authorize: async () => true,
       execute,
       store: { reserve: vi.fn().mockResolvedValue({ kind: 'RESERVED', state: 'IN_PROGRESS' }), get: vi.fn(), commit: vi.fn().mockResolvedValue(undefined), fail: vi.fn().mockResolvedValue(undefined) },
     });
+    const coordinator = new RecoveryCoordinator(service);
     const worker = new RecoveryWorker(store, coordinator, 'worker-1');
 
     const result = await worker.runOnce();
