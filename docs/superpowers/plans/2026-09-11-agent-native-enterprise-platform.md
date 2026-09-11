@@ -61,7 +61,7 @@
 
 ### Task 7: 16-case benchmark
 
-**Status:** In progress — all 16 benchmark definitions, the 64-case adapter matrix, the unified runner contract, and the first executable scenario slice B01-B08 are implemented. CI Run #203 passed after fixing the `@agent-native/outbox` workspace entrypoint packaging issue. The next slice is B09-B13 (crash/recovery/lease semantics), followed by B14-B16, deterministic 64-case result artifacts, and hard safety-invariant gates.
+**Status:** In progress — all 16 benchmark definitions, the 64-case adapter matrix, the unified runner contract, and executable scenario work through the first slices are implemented. Run #194 exposed a real benchmark-package export defect (`benchmarkCases` was imported but not exported from `packages/benchmark/src/scenario-runner.ts`); the defect was fixed in commit `5bda30a333c1f9f447d2fc2aea99471e4f54d399`. The next authoritative CI result must verify the repaired benchmark package and then continue B09-B16 and deterministic artifact hard gates.
 
 - [x] Encode every benchmark with fixture, initial DB state, Mock LLM/Tool, exact steps, SQL assertions, expected result, and failure criteria.
 - [x] Execute the same matrix across all four adapters through one framework-neutral contract.
@@ -82,7 +82,7 @@
 
 ### Task 9: Vercel deployment boundary
 
-**Status:** Complete — package/API boundary, provider-neutral LLM gateway contract, stateless request handler, static worker-dependency safety contract, deployment documentation, explicit API typecheck/build contract, and CI verification are all passing.
+**Status:** Complete — package/API boundary, provider-neutral LLM gateway contract, stateless request handler, static worker-dependency safety contract, deployment documentation, explicit API typecheck/build contract, and CI verification are all passing in Run #189. The remaining unchecked composition-root item is intentionally deferred until a real durable runtime/repository composition exists.
 
 - [x] Keep durable worker/database operations outside request-lifetime assumptions.
 - [x] Route model calls through a provider-agnostic LLM gateway boundary.
@@ -93,11 +93,18 @@
 
 ### Task 10: CI and verification
 
-**Status:** In progress — CI explicitly verifies repository typecheck, API typecheck/build, deployment-boundary tests, full tests, and Compose smoke. Run #203 is green. A new workspace packaging contract test is now in place, and missing root `exports` metadata was hardened for tool-runtime/API/worker; the new packaging verification is awaiting its CI result. Remaining work is executable B09-B16 coverage, benchmark artifact publication, and final merge-gate hardening.
+**Status:** In progress. The CI workflow already verifies repository typecheck, API typecheck/build, deployment-boundary tests, full tests, and Compose smoke. Run #203 was green for the prior packaging-hardening checkpoint; Run #194 then failed on the benchmark package export and was fixed as noted above. The latest benchmark branch head is `8db5437610c38e294349c24368037ee8bf3390db`; it had no workflow run attached when inspected, so a documentation checkpoint commit was added to retrigger the PR workflow. The current follow-up commit is `4464230487f4b5e792613c545d52309db98c1bd9`.
 
 - [x] Run type checking, unit/integration tests, and deployment-boundary contract tests in CI.
 - [x] Add a workspace packaging contract covering stable `main`/`types`/root `exports` and workspace dependency exportability.
 - [ ] Verify the workspace packaging contract in CI after the entrypoint hardening changes.
+- [ ] Verify the repaired benchmark package export and B09-B16 executable scenarios in CI.
 - [ ] Add/verify formatting checks if the repository adopts a formatter contract.
 - [ ] Require all benchmark safety contracts before merge.
 - [ ] Publish deterministic benchmark artifacts.
+
+## Latest CI re-trigger checkpoint
+
+- Commit `4464230487f4b5e792613c545d52309db98c1bd9` updates the implementation/status documentation only; it does not alter runtime behavior.
+- The checkpoint exists specifically to force a fresh `pull_request` CI event after the repaired benchmark head had no workflow run attached.
+- The resulting CI run, once GitHub schedules it, is the authoritative verification for the new head. It must not be conflated with Run #189, #194, or #203.
