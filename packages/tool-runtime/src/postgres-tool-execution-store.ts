@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
-import type { IdempotencyReservation, ToolExecutionCommit, ToolExecutionLookup, ToolExecutionStore } from './tool-execution';
+import type { IdempotencyReservation, ToolExecutionCommit, ToolExecutionLookup, ToolExecutionRequest, ToolExecutionStore } from './tool-execution';
 
 const RESERVATION_LEASE_SECONDS = 300;
 
-/** PostgreSQL implementation of the durable idempotency state machine + transactional outbox boundary. */
+/** PostgreSQL durable idempotency state machine + transactional outbox boundary. */
 export class PostgresToolExecutionStore implements ToolExecutionStore {
   constructor(private readonly pool: Pool) {}
 
@@ -48,7 +48,6 @@ export class PostgresToolExecutionStore implements ToolExecutionStore {
       )
     `);
 
-    // Upgrade databases created by earlier store/outbox implementations.
     await this.pool.query(`ALTER TABLE tool_execution_idempotency ADD COLUMN IF NOT EXISTS input_hash TEXT NOT NULL DEFAULT ''`);
     await this.pool.query(`ALTER TABLE tool_execution_idempotency ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'SUCCEEDED'`);
     await this.pool.query(`ALTER TABLE tool_execution_idempotency ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ NULL`);
@@ -180,6 +179,23 @@ export class PostgresToolExecutionStore implements ToolExecutionStore {
       [lookup.tenantId, lookup.idempotencyKey, lookup.toolName],
     );
     return result.rows[0]?.output ?? null;
+  }
+
+  async reconcileReplay(request: ToolExecutionRequest, output: unknown): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO outbox_events
+        (idempotency_key, event_type, tool_name, tenant_id, actor_id, payload)
+       VALUES ($1, 'tool.execution.completed', $2, $3, $4, $5::jsonb)
+       ON CONFLICT (tenant_id, idempotency_key) DO NOTHING`,
+      [request.idempotencyKey, request.tool.name, request.context.tenantId, request.context.actorId, JSON.stringify({
+        type: 'tool.execution.completed',
+        idempotencyKey: request.idempotencyKey,
+        toolName: request.tool.name,
+        tenantId: request.context.tenantId,
+        actorId: request.context.actorId,
+        output,
+      })],
+    );
   }
 
   async commit(commit: ToolExecutionCommit): Promise<void> {
