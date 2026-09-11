@@ -13,6 +13,9 @@ describe('benchmark adapter matrix', () => {
           details: 'contract-only runner',
         };
       },
+      async runAll() {
+        return [];
+      },
     };
 
     const results = await Promise.all(
