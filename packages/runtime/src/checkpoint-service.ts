@@ -1,9 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import type { CheckpointEnvelope } from '@agent-native/runtime-contract/durable';
 import type { IdGenerator, RuntimeAdapter } from './ports';
 import type { DurableRepositories } from './repositories';
 
 export class CheckpointService {
-  constructor(private readonly repos: DurableRepositories, private readonly adapter: RuntimeAdapter, private readonly ids: IdGenerator = { next: (prefix) => `${prefix}:${crypto.randomUUID()}` }) {}
+  constructor(private readonly repos: DurableRepositories, private readonly adapter: RuntimeAdapter, private readonly ids: IdGenerator = { next: (prefix) => `${prefix}:${randomUUID()}` }) {}
 
   async save(input: { runId: string; turnId?: string; sequence: bigint; fencingToken: bigint; state: unknown }): Promise<CheckpointEnvelope> {
     const checkpoint: CheckpointEnvelope = {
