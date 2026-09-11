@@ -1,0 +1,12 @@
+# Repository-local Codex defaults.
+# Keep this file declarative and non-secret; behavior belongs in AGENTS.md and skills.
+
+[project]
+name = "agent-native-enterprise-platform"
+
+[commands]
+test = "pnpm test"
+typecheck = "pnpm typecheck"
+
+[skills]
+paths = [".codex/skills"]
