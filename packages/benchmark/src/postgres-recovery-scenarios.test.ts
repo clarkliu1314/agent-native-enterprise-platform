@@ -1,5 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
-import { Pool } from 'pg';
+import { describe, expect, it } from 'vitest';
 import { executePostgresRecoveryScenario } from './postgres-recovery-scenarios';
 import { benchmarkCases } from './index';
 
@@ -7,12 +6,6 @@ const databaseUrl = process.env.DATABASE_URL;
 const recoveryCases = benchmarkCases.filter((testCase) => /^B(09|10|11|12|13)$/.test(testCase.id));
 
 describe.skipIf(!databaseUrl)('PostgreSQL recovery benchmark scenarios', () => {
-  const pool = new Pool({ connectionString: databaseUrl });
-
-  beforeAll(async () => {
-    await pool.query('SELECT 1');
-  });
-
   it.each(recoveryCases)('$id uses durable PostgreSQL recovery semantics', async (testCase) => {
     const result = await executePostgresRecoveryScenario(testCase.id, 'agentscope', databaseUrl!);
     expect(result.invariantViolations).toEqual([]);
