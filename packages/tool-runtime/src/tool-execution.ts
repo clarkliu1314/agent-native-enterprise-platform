@@ -22,7 +22,6 @@ export interface ToolExecutionRequest {
   tool: ToolDefinition;
   input: unknown;
   context: ToolExecutionContext;
-  /** Stable caller-owned key reused for every retry of one logical command. */
   idempotencyKey: string;
 }
 
@@ -67,13 +66,8 @@ export type IdempotencyReservation =
   | { kind: 'RETRY'; state: 'FAILED_RETRYABLE' }
   | { kind: 'CONFLICT'; state: IdempotencyState };
 
-/**
- * Durable idempotency/outbox storage contract.
- * Reservation is the cross-worker coordination point. The payload hash makes
- * reusing a key for a different command an explicit conflict rather than a replay.
- */
 export interface ToolExecutionStore {
-  reserve(request: {
+  reserve(input: {
     idempotencyKey: string;
     tenantId: string;
     toolName: string;
@@ -119,14 +113,13 @@ export class IdempotencyInProgressError extends Error {
   }
 }
 
-/**
- * Durable execution pipeline:
- *   authorize -> reserve -> execute -> commit(result + outbox)
- *
- * A reservation prevents different workers from executing the same logical command at
- * the same time. The downstream tool should also honor the same idempotency key for
- * external side effects; PostgreSQL cannot make an arbitrary remote API exactly-once.
- */
+export class IdempotencyFinalFailureError extends Error {
+  constructor(idempotencyKey: string) {
+    super(`Idempotency operation permanently failed: ${idempotencyKey}`);
+    this.name = 'IdempotencyFinalFailureError';
+  }
+}
+
 export class ToolExecutionService {
   private readonly results = new Map<string, ToolExecutionResult>();
   private readonly inFlight = new Map<string, Promise<ToolExecutionResult>>();
@@ -147,14 +140,11 @@ export class ToolExecutionService {
         actorId: request.context.actorId,
         input: request.input,
       });
-      if (reservation.kind === 'REPLAY') {
-        return { output: reservation.output, replayed: true };
-      }
+      if (reservation.kind === 'REPLAY') return { output: reservation.output, replayed: true };
       if (reservation.kind === 'CONFLICT') {
+        if (reservation.state === 'IN_PROGRESS') throw new IdempotencyInProgressError(request.idempotencyKey);
+        if (reservation.state === 'FAILED_FINAL') throw new IdempotencyFinalFailureError(request.idempotencyKey);
         throw new IdempotencyConflictError(request.idempotencyKey);
-      }
-      if (reservation.kind === 'IN_PROGRESS') {
-        throw new IdempotencyInProgressError(request.idempotencyKey);
       }
     } else {
       const existing = this.results.get(request.idempotencyKey);
@@ -208,9 +198,7 @@ export class ToolExecutionService {
     };
 
     if (this.dependencies.store) await this.dependencies.store.commit(commit);
-    else if (this.dependencies.persistResultAndPublishOutbox) {
-      await this.dependencies.persistResultAndPublishOutbox(commit);
-    }
+    else if (this.dependencies.persistResultAndPublishOutbox) await this.dependencies.persistResultAndPublishOutbox(commit);
 
     const result: ToolExecutionResult = { output, replayed: false };
     this.results.set(request.idempotencyKey, result);
