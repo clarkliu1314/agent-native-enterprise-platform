@@ -20,12 +20,7 @@ describe('PostgresToolExecutionStore', () => {
   it('reserves a new key as IN_PROGRESS and replays after success', async () => {
     const first = await store.reserve({ idempotencyKey: 'state-1', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme' } });
     expect(first).toEqual({ kind: 'RESERVED', state: 'IN_PROGRESS' });
-
-    await store.commit({
-      idempotencyKey: 'state-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' },
-      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'state-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' } },
-    });
-
+    await store.commit({ idempotencyKey: 'state-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' }, outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'state-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' } } });
     expect(await store.reserve({ idempotencyKey: 'state-1', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme' } })).toEqual({ kind: 'REPLAY', state: 'SUCCEEDED', output: { companyId: 'company-1' } });
   });
 
@@ -56,21 +51,14 @@ describe('PostgresToolExecutionStore', () => {
   });
 
   it('durably reloads an idempotent result after a new store instance is created', async () => {
-    await store.commit({
-      idempotencyKey: 'pg-idem-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1',
-      output: { companyId: 'company-1' },
-      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'pg-idem-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' } },
-    });
+    await store.reserve({ idempotencyKey: 'pg-idem-1', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme Capital' } });
+    await store.commit({ idempotencyKey: 'pg-idem-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' }, outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'pg-idem-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' } } });
     const reloadedStore = new PostgresToolExecutionStore(pool);
     expect(await reloadedStore.get({ idempotencyKey: 'pg-idem-1', tenantId: 'fund-1', toolName: 'crm.create_company' })).toEqual({ companyId: 'company-1' });
   });
 
-  it('commits exactly one idempotency row and one outbox event for repeated commits', async () => {
-    const commit = {
-      idempotencyKey: 'pg-idem-duplicate', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1',
-      output: { companyId: 'company-2' },
-      outboxEvent: { type: 'tool.execution.completed' as const, idempotencyKey: 'pg-idem-duplicate', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-2' } },
-    };
+  it('commits exactly one idempotency row and one outbox event for a reserved key', async () => {
+    const commit = { idempotencyKey: 'pg-idem-duplicate', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-2' }, outboxEvent: { type: 'tool.execution.completed' as const, idempotencyKey: 'pg-idem-duplicate', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-2' } } };
     await store.reserve({ idempotencyKey: commit.idempotencyKey, tenantId: commit.tenantId, toolName: commit.toolName, actorId: commit.actorId, input: { name: 'Duplicate' } });
     await store.commit(commit);
     const rows = await pool.query(`SELECT (SELECT COUNT(*) FROM tool_execution_idempotency WHERE idempotency_key = $1) AS idempotency_count, (SELECT COUNT(*) FROM outbox_events WHERE idempotency_key = $1) AS outbox_count`, [commit.idempotencyKey]);
@@ -80,10 +68,7 @@ describe('PostgresToolExecutionStore', () => {
 
   it('does not allow one tenant to read another tenant\'s idempotency result', async () => {
     await store.reserve({ idempotencyKey: 'pg-tenant-isolation', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Secret' } });
-    await store.commit({
-      idempotencyKey: 'pg-tenant-isolation', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-secret' },
-      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'pg-tenant-isolation', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-secret' } },
-    });
+    await store.commit({ idempotencyKey: 'pg-tenant-isolation', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-secret' }, outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'pg-tenant-isolation', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-secret' } } });
     expect(await store.get({ idempotencyKey: 'pg-tenant-isolation', tenantId: 'fund-2', toolName: 'crm.create_company' })).toBeNull();
   });
 });
