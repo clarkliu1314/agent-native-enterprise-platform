@@ -11,13 +11,8 @@ const request = {
 };
 
 const lease: RecoveryLease = {
-  runId: 'run-1',
-  owner: 'worker-1',
-  leaseToken: 'token-1',
-  leaseExpiresAt: new Date(Date.now() + 30_000),
-  attempts: 0,
-  request,
-  state: 'IN_PROGRESS',
+  runId: 'run-1', owner: 'worker-1', leaseToken: 'token-1',
+  leaseExpiresAt: new Date(Date.now() + 30_000), attempts: 0, request, state: 'IN_PROGRESS',
 };
 
 function storeMock(): RecoveryCandidateStore {
@@ -26,8 +21,8 @@ function storeMock(): RecoveryCandidateStore {
     claimRecoveryCandidate: vi.fn().mockResolvedValue(lease),
     reclaimExpiredRecoveryCandidates: vi.fn().mockResolvedValue(0),
     completeRecovery: vi.fn().mockResolvedValue(true),
-    recordRecoveryFailure: vi.fn(),
-    migrate: vi.fn(),
+    recordRecoveryFailure: vi.fn().mockResolvedValue('FAILED_RETRYABLE'),
+    migrate: vi.fn().mockResolvedValue(undefined),
   } as unknown as RecoveryCandidateStore;
 }
 
@@ -38,18 +33,13 @@ describe('RecoveryWorker', () => {
     const coordinator = new RecoveryCoordinator({
       authorize: async () => true,
       execute,
-      store: {
-        reserve: vi.fn().mockResolvedValue({ kind: 'RESERVED', state: 'IN_PROGRESS' }),
-        get: vi.fn(),
-        commit: vi.fn().mockResolvedValue(undefined),
-        fail: vi.fn().mockResolvedValue(undefined),
-      },
+      store: { reserve: vi.fn().mockResolvedValue({ kind: 'RESERVED', state: 'IN_PROGRESS' }), get: vi.fn(), commit: vi.fn().mockResolvedValue(undefined), fail: vi.fn().mockResolvedValue(undefined) },
     });
     const worker = new RecoveryWorker(store, coordinator, 'worker-1');
 
     const result = await worker.runOnce();
 
-    expect(result).toEqual({ recovered: 1, skipped: 0 });
+    expect(result).toEqual({ recovered: 1, skipped: 0, failed: 0 });
     expect(store.claimRecoveryCandidate).toHaveBeenCalledWith('run-1', 'worker-1', expect.any(String), expect.any(Number), expect.any(Date));
     expect(store.completeRecovery).toHaveBeenCalledWith('run-1', 'worker-1', 'token-1');
     expect(execute).toHaveBeenCalledWith(request);
@@ -63,20 +53,19 @@ describe('RecoveryWorker', () => {
 
     const result = await worker.runOnce();
 
-    expect(result).toEqual({ recovered: 0, skipped: 1 });
+    expect(result).toEqual({ recovered: 0, skipped: 1, failed: 0 });
     expect(coordinator.recover).not.toHaveBeenCalled();
   });
 
-  it('records retryable failures and releases the lease', async () => {
+  it('records retryable failures and continues the worker loop', async () => {
     const store = storeMock();
     const error = new Error('temporary upstream failure');
     const coordinator = { recover: vi.fn().mockRejectedValue(error) } as unknown as RecoveryCoordinator;
     const worker = new RecoveryWorker(store, coordinator, 'worker-1');
 
-    await expect(worker.runOnce()).rejects.toThrow('temporary upstream failure');
+    const result = await worker.runOnce();
 
-    expect(store.recordRecoveryFailure).toHaveBeenCalledWith(expect.objectContaining({
-      runId: 'run-1', owner: 'worker-1', leaseToken: 'token-1', retryable: true, error,
-    }));
+    expect(result).toEqual({ recovered: 0, skipped: 0, failed: 1 });
+    expect(store.recordRecoveryFailure).toHaveBeenCalledWith(expect.objectContaining({ runId: 'run-1', owner: 'worker-1', leaseToken: 'token-1', retryable: true, error }));
   });
 });
