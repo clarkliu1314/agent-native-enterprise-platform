@@ -16,36 +16,39 @@ describe('OutboxPublisher', () => {
     };
     const publish = vi.fn().mockResolvedValue(undefined);
 
-    const count = await new OutboxPublisher(repository, publish).publishBatch(10);
+    const count = await new OutboxPublisher(repository, publish).publishBatch(10, 'worker-a');
 
     expect(count).toBe(1);
     expect(publish).toHaveBeenCalledWith(message('1'));
-    expect(repository.markPublished).toHaveBeenCalledWith('1');
+    expect(repository.markPublished).toHaveBeenCalledWith('1', 'worker-a');
     expect(repository.release).not.toHaveBeenCalled();
   });
 
   it('leaves a failed message retryable instead of acknowledging it', async () => {
+    const error = new Error('broker unavailable');
     const repository: OutboxRepository = {
       claim: vi.fn().mockResolvedValue([message('2')]),
       markPublished: vi.fn(),
       release: vi.fn().mockResolvedValue(undefined),
     };
-    const publish = vi.fn().mockRejectedValue(new Error('broker unavailable'));
+    const publish = vi.fn().mockRejectedValue(error);
 
-    await expect(new OutboxPublisher(repository, publish).publishBatch(10)).resolves.toBe(0);
+    await expect(new OutboxPublisher(repository, publish).publishBatch(10, 'worker-a')).resolves.toBe(0);
     expect(repository.markPublished).not.toHaveBeenCalled();
-    expect(repository.release).toHaveBeenCalledWith('2', expect.any(Error));
+    expect(repository.release).toHaveBeenCalledWith('2', 'worker-a', error);
   });
 
-  it('does not acknowledge when the broker succeeds but acknowledgement fails', async () => {
+  it('releases after transport succeeds when acknowledgement fails, allowing duplicate delivery', async () => {
+    const error = new Error('db unavailable');
     const repository: OutboxRepository = {
       claim: vi.fn().mockResolvedValue([message('3')]),
-      markPublished: vi.fn().mockRejectedValue(new Error('db unavailable')),
+      markPublished: vi.fn().mockRejectedValue(error),
       release: vi.fn().mockResolvedValue(undefined),
     };
     const publish = vi.fn().mockResolvedValue(undefined);
 
-    await expect(new OutboxPublisher(repository, publish).publishBatch(10)).resolves.toBe(0);
-    expect(repository.release).toHaveBeenCalledWith('3', expect.any(Error));
+    await expect(new OutboxPublisher(repository, publish).publishBatch(10, 'worker-a')).resolves.toBe(0);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(repository.release).toHaveBeenCalledWith('3', 'worker-a', error);
   });
 });
