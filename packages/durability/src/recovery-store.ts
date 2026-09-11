@@ -35,6 +35,12 @@ export interface RecoveryFailure {
   maxBackoffMs?: number;
 }
 
+export interface RecoveryFailureResult {
+  state: Extract<RecoveryState, 'FAILED_RETRYABLE' | 'FAILED_FINAL'>;
+  attempts: number;
+  nextAttemptAt: Date;
+}
+
 export class RecoveryCandidateStore {
   constructor(private readonly pool: Pool) {}
 
@@ -55,6 +61,10 @@ export class RecoveryCandidateStore {
         ADD COLUMN IF NOT EXISTS recovery_owner TEXT,
         ADD COLUMN IF NOT EXISTS recovery_lease_token TEXT,
         ADD COLUMN IF NOT EXISTS recovery_lease_expires_at TIMESTAMPTZ;
+      ALTER TABLE agent_runs
+        ALTER COLUMN recovery_state SET DEFAULT 'NONE',
+        ALTER COLUMN recovery_attempts SET DEFAULT 0,
+        ALTER COLUMN next_attempt_at SET DEFAULT NOW();
       CREATE INDEX IF NOT EXISTS agent_runs_recovery_candidates_idx
         ON agent_runs (next_attempt_at, run_id)
         WHERE recovery_state IN ('IN_PROGRESS', 'FAILED_RETRYABLE');
@@ -149,13 +159,14 @@ export class RecoveryCandidateStore {
       `UPDATE agent_runs
        SET recovery_state = 'SUCCEEDED', recovery_owner = NULL,
            recovery_lease_token = NULL, recovery_lease_expires_at = NULL
-       WHERE run_id = $1 AND recovery_owner = $2 AND recovery_lease_token = $3`,
+       WHERE run_id = $1 AND recovery_owner = $2 AND recovery_lease_token = $3
+         AND recovery_state IN ('IN_PROGRESS', 'FAILED_RETRYABLE')`,
       [runId, owner, leaseToken],
     );
     return result.rowCount === 1;
   }
 
-  async recordRecoveryFailure(input: RecoveryFailure): Promise<RecoveryState> {
+  async recordRecoveryFailure(input: RecoveryFailure): Promise<RecoveryFailureResult> {
     const maxAttempts = input.maxAttempts ?? 5;
     const baseBackoffMs = input.baseBackoffMs ?? 1_000;
     const maxBackoffMs = input.maxBackoffMs ?? 60_000;
@@ -189,7 +200,7 @@ export class RecoveryCandidateStore {
       );
       if (updated.rowCount !== 1) throw new Error(`Recovery lease lost: ${input.runId}`);
       await client.query('COMMIT');
-      return state;
+      return { state: state as RecoveryFailureResult['state'], attempts, nextAttemptAt };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
