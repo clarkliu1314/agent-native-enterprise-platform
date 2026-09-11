@@ -13,6 +13,7 @@
     "@agent-native/adapter-eino": "workspace:*",
     "@agent-native/adapter-langgraph": "workspace:*",
     "@agent-native/adapter-mastra": "workspace:*",
+    "@agent-native/durability": "workspace:*",
     "@agent-native/outbox": "workspace:*",
     "@agent-native/runtime": "workspace:*",
     "@agent-native/runtime-contract": "workspace:*",
