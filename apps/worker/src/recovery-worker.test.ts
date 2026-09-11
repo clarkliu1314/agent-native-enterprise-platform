@@ -53,6 +53,8 @@ describe('RecoveryWorker', () => {
 
   it('replays a prior idempotent effect after restart without invoking the business effect twice', async () => {
     const store = storeMock();
+    const restartedLease: RecoveryLease = { ...lease, owner: 'worker-restarted', leaseToken: 'restart-token' };
+    vi.mocked(store.claimRecoveryCandidate).mockResolvedValue(restartedLease);
     const execute = vi.fn().mockResolvedValue({ reservationId: 'should-not-run' });
     const service = new ToolExecutionService({
       authorize: async () => true,
@@ -72,7 +74,7 @@ describe('RecoveryWorker', () => {
       candidateId: 'run-1', attempt: 1, owner: 'worker-restarted', classification: 'SUCCEEDED', nextAttemptAt: null,
     });
     expect(execute).not.toHaveBeenCalled();
-    expect(store.completeRecovery).toHaveBeenCalledWith('run-1', 'worker-1', 'token-1');
+    expect(store.completeRecovery).toHaveBeenCalledWith('run-1', 'worker-restarted', 'restart-token');
   });
 
   it('does not execute when another worker owns the candidate', async () => {
