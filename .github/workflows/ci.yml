@@ -45,16 +45,33 @@ jobs:
         run: pnpm --filter @agent-native/api build
       - name: Verify deployment boundary
         run: pnpm exec vitest run packages/deployment-boundary apps/api
-      - name: Test
-        id: test
-        run: pnpm test
+      - name: Benchmark hard gate
+        id: benchmark
+        run: |
+          rm -f artifacts/benchmark-results.json
+          pnpm exec vitest run packages/benchmark/src/benchmark-smoke.test.ts
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const report = JSON.parse(readFileSync('artifacts/benchmark-results.json', 'utf8'));
+          if (report.schemaVersion !== 1) throw new Error(`Unexpected benchmark schemaVersion: ${report.schemaVersion}`);
+          if (report.summary.total !== 64 || report.summary.passed !== 64 || report.summary.failed !== 0) {
+            throw new Error(`Benchmark hard gate failed: ${JSON.stringify(report.summary)}`);
+          }
+          if (report.results.some((result) => result.passed !== true || (result.invariantViolations?.length ?? 0) !== 0)) {
+            throw new Error('Benchmark hard gate failed: at least one scenario has invariant violations');
+          }
+          console.log(`Benchmark hard gate passed: ${report.summary.total}/${report.summary.total}`);
+          NODE
       - name: Upload benchmark report
-        if: steps.test.outcome == 'success'
+        if: steps.benchmark.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
           path: artifacts/benchmark-results.json
           if-no-files-found: error
+      - name: Test
+        id: test
+        run: pnpm test
 
   compose-smoke:
     runs-on: ubuntu-latest
