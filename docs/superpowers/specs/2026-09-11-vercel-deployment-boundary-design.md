@@ -1,7 +1,7 @@
 # Vercel Deployment Boundary Design
 
 **Date:** 2026-09-11  
-**Status:** Approved architecture; implementation pending written-spec review
+**Status:** Approved; implementation in progress
 
 ## Goal
 
@@ -44,7 +44,7 @@ The Vercel boundary must not:
 
 ## Environment/deployment contract
 
-The deployment contract will define:
+The deployment contract defines:
 
 - `DATABASE_URL`: PostgreSQL connection for durable platform state;
 - `REDIS_URL`: optional Redis coordination/queue connection where required;
@@ -52,7 +52,7 @@ The deployment contract will define:
 - `LLM_PROVIDER_API_KEY`: provider credential supplied only to the deployment that actually invokes the provider, never persisted as run data;
 - `WORKER_ENDPOINT`: optional internal control-plane address for explicitly asynchronous handoff, without making the worker a Vercel request-lifetime dependency.
 
-The implementation will distinguish required-at-startup variables from optional variables and will fail closed when a required boundary variable is absent.
+The implementation distinguishes required-at-startup variables from optional variables and fails closed when a required boundary variable is absent.
 
 ## Failure semantics
 
@@ -74,11 +74,17 @@ TDD starts with a deployment-boundary contract test that fails if a Vercel entry
 5. explicit rejection of worker-only operations from the Vercel boundary;
 6. typecheck/build validation for the Vercel-facing application boundary.
 
-No real Vercel credentials or production deployment is required. CI validates the boundary and build contract; production deployment remains an operational concern.
+The initial implementation and Run #184 establish the package/API boundary and static safety contract. No real Vercel credentials or production deployment is required. CI validates the boundary and build contract; production deployment remains an operational concern.
+
+## Implementation boundary decision
+
+The repository currently has no safe durable runtime/repository composition function that can be instantiated directly by a Vercel request. Therefore the API handler is dependency-injected rather than fabricating an in-memory runtime or embedding the worker in the request path. A production composition root is a follow-up integration once the durable runtime wiring exists.
+
+Likewise, local Compose does not add a fake model provider or pretend that the API is durable before the corresponding runtime composition exists.
 
 ## Documentation deliverables
 
-The implementation will document:
+The implementation documents:
 
 - local Compose versus Vercel deployment topology;
 - which capabilities belong to Vercel versus the durable worker;
