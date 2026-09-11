@@ -6,5 +6,14 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agent-native/adapter-agentscope": "workspace:*",
+    "@agent-native/adapter-core": "workspace:*",
+    "@agent-native/adapter-eino": "workspace:*",
+    "@agent-native/adapter-langgraph": "workspace:*",
+    "@agent-native/adapter-mastra": "workspace:*",
+    "@agent-native/runtime": "workspace:*",
+    "@agent-native/runtime-contract": "workspace:*"
   }
 }
