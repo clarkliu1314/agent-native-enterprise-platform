@@ -1,5 +1,6 @@
 export { InMemoryAgentRuntime } from './in-memory-runtime';
 export { DurableRuntimeService, hashCommand } from './runtime-service';
+export { DurableWorker } from './durable-worker';
 export { PostgresDatabase } from './postgres-client';
 export { PostgresRuntimeRepositories } from './postgres-runtime-repositories';
 export { PostgresToolRepositories } from './postgres-tool-repositories';
