@@ -1,0 +1,16 @@
+{
+  "name": "@agent-native/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/handler.ts",
+  "types": "./src/handler.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agent-native/deployment-boundary": "workspace:*",
+    "@agent-native/runtime-contract": "workspace:*"
+  }
+}
