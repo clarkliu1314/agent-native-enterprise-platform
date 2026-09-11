@@ -114,14 +114,17 @@ describe('RecoveryCandidateStore PostgreSQL contract', () => {
   it('applies bounded exponential backoff and terminal classification', async () => {
     const lease = await store.claimRecoveryCandidate('recovery-1', 'worker-a', 'token-a', 30_000, now);
     expect(lease).not.toBeNull();
-    expect(await store.recordRecoveryFailure({ runId: 'recovery-1', owner: 'worker-a', leaseToken: 'token-a', retryable: true, error: new Error('temporary'), now, maxAttempts: 3, baseBackoffMs: 1_000, maxBackoffMs: 2_000 })).toBe('FAILED_RETRYABLE');
+    const firstFailure = await store.recordRecoveryFailure({ runId: 'recovery-1', owner: 'worker-a', leaseToken: 'token-a', retryable: true, error: new Error('temporary'), now, maxAttempts: 3, baseBackoffMs: 1_000, maxBackoffMs: 2_000 });
+    expect(firstFailure).toMatchObject({ state: 'FAILED_RETRYABLE', attempts: 1 });
+    expect(firstFailure.nextAttemptAt.getTime()).toBe(now.getTime() + 1_000);
     let row = await pool.query('SELECT recovery_attempts, recovery_state, next_attempt_at FROM agent_runs WHERE run_id = $1', ['recovery-1']);
     expect(row.rows[0].recovery_attempts).toBe(1);
     expect(new Date(row.rows[0].next_attempt_at).getTime()).toBe(now.getTime() + 1_000);
 
     const lease2 = await store.claimRecoveryCandidate('recovery-1', 'worker-a', 'token-b', 30_000, new Date(now.getTime() + 1_000));
     expect(lease2).not.toBeNull();
-    expect(await store.recordRecoveryFailure({ runId: 'recovery-1', owner: 'worker-a', leaseToken: 'token-b', retryable: true, error: new Error('temporary'), now: new Date(now.getTime() + 1_000), maxAttempts: 2, baseBackoffMs: 1_000, maxBackoffMs: 1_500 })).toBe('FAILED_FINAL');
+    const secondFailure = await store.recordRecoveryFailure({ runId: 'recovery-1', owner: 'worker-a', leaseToken: 'token-b', retryable: true, error: new Error('temporary'), now: new Date(now.getTime() + 1_000), maxAttempts: 2, baseBackoffMs: 1_000, maxBackoffMs: 1_500 });
+    expect(secondFailure).toMatchObject({ state: 'FAILED_FINAL', attempts: 2 });
     row = await pool.query('SELECT recovery_attempts, recovery_state FROM agent_runs WHERE run_id = $1', ['recovery-1']);
     expect(row.rows[0]).toMatchObject({ recovery_attempts: 2, recovery_state: 'FAILED_FINAL' });
   });
