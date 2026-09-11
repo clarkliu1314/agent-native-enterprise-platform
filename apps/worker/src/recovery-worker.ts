@@ -1,10 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { RecoveryCandidateStore, RecoveryCoordinator } from '@agent-native/durability';
 
+export type RecoveryOutcomeClassification = 'SUCCEEDED' | 'FAILED_RETRYABLE' | 'FAILED_FINAL' | 'SKIPPED';
+
+export interface RecoveryOutcome {
+  candidateId: string;
+  attempt: number;
+  owner: string;
+  classification: RecoveryOutcomeClassification;
+  nextAttemptAt: Date | null;
+}
+
 export interface RecoveryWorkerResult {
   recovered: number;
   skipped: number;
   failed: number;
+  outcomes: RecoveryOutcome[];
 }
 
 export interface RecoveryWorkerOptions {
@@ -44,15 +55,18 @@ export class RecoveryWorker {
     let recovered = 0;
     let skipped = 0;
     let failed = 0;
+    const outcomes: RecoveryOutcome[] = [];
 
     for (const candidate of candidates) {
       const leaseToken = randomUUID();
       const lease = await this.store.claimRecoveryCandidate(candidate.runId, this.owner, leaseToken, this.leaseMs, now);
       if (!lease) {
         skipped += 1;
+        outcomes.push({ candidateId: candidate.runId, attempt: candidate.attempts + 1, owner: this.owner, classification: 'SKIPPED', nextAttemptAt: null });
         continue;
       }
 
+      const attempt = lease.attempts + 1;
       const heartbeat = setInterval(() => {
         void this.store.renewRecoveryLease(lease.runId, lease.owner, lease.leaseToken, this.leaseMs).catch(() => undefined);
       }, Math.max(1_000, Math.floor(this.leaseMs / 3)));
@@ -63,10 +77,11 @@ export class RecoveryWorker {
         const completed = await this.store.completeRecovery(lease.runId, lease.owner, lease.leaseToken);
         if (!completed) throw new Error(`Recovery lease lost before completion: ${lease.runId}`);
         recovered += 1;
+        outcomes.push({ candidateId: lease.runId, attempt, owner: lease.owner, classification: 'SUCCEEDED', nextAttemptAt: null });
       } catch (error) {
         failed += 1;
         try {
-          await this.store.recordRecoveryFailure({
+          const failure = await this.store.recordRecoveryFailure({
             runId: lease.runId,
             owner: lease.owner,
             leaseToken: lease.leaseToken,
@@ -77,15 +92,17 @@ export class RecoveryWorker {
             baseBackoffMs: this.baseBackoffMs,
             maxBackoffMs: this.maxBackoffMs,
           });
+          outcomes.push({ candidateId: lease.runId, attempt: failure.attempts, owner: lease.owner, classification: failure.state, nextAttemptAt: failure.nextAttemptAt });
         } catch {
           // A lost lease is already recoverable by another worker after expiry; do not strand the loop.
+          outcomes.push({ candidateId: lease.runId, attempt, owner: lease.owner, classification: 'FAILED_RETRYABLE', nextAttemptAt: null });
         }
       } finally {
         clearInterval(heartbeat);
       }
     }
 
-    return { recovered, skipped, failed };
+    return { recovered, skipped, failed, outcomes };
   }
 }
 
