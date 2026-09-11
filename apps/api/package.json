@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./src/handler.ts",
   "types": "./src/handler.ts",
+  "exports": {
+    ".": "./src/handler.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
