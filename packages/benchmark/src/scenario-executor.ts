@@ -9,6 +9,7 @@ import {
   type IdempotencyReservation,
 } from '@agent-native/tool-runtime';
 import { OutboxPublisher, type OutboxMessage, type OutboxRepository } from '@agent-native/outbox';
+import { RecoveryCoordinator, type RecoveryCandidate } from '@agent-native/durability';
 import { InMemoryAgentRuntime } from '@agent-native/runtime';
 import type { BenchmarkAdapter, BenchmarkCase } from './index';
 import { createBenchmarkAdapters } from './adapters';
@@ -47,7 +48,11 @@ class ScenarioStore implements ToolExecutionStore {
     if (existing.toolName !== input.toolName || existing.inputHash !== inputHash) return { kind: 'CONFLICT', state: existing.status };
     if (existing.status === 'SUCCEEDED') return { kind: 'REPLAY', state: 'SUCCEEDED', output: existing.output };
     if (existing.status === 'FAILED_FINAL') return { kind: 'CONFLICT', state: 'FAILED_FINAL' };
-    return { kind: 'CONFLICT', state: existing.status };
+    if (existing.status === 'FAILED_RETRYABLE') {
+      existing.status = 'IN_PROGRESS';
+      return { kind: 'RETRY', state: 'FAILED_RETRYABLE' };
+    }
+    return { kind: 'CONFLICT', state: 'IN_PROGRESS' };
   }
 
   async get(lookup: ToolExecutionLookup): Promise<unknown | null> {
@@ -78,7 +83,7 @@ class ScenarioOutboxRepository implements OutboxRepository {
   private published = false;
   private acknowledgementsLost = 0;
 
-  constructor(private readonly failTransportOnce = false, private readonly failAcknowledgementOnce = false) {}
+  constructor(private readonly state: ScenarioState, private readonly failTransportOnce = false, private readonly failAcknowledgementOnce = false) {}
 
   async claim(): Promise<OutboxMessage[]> {
     return this.published ? [] : [this.message];
@@ -90,16 +95,58 @@ class ScenarioOutboxRepository implements OutboxRepository {
       throw new Error('acknowledgement lost');
     }
     this.published = true;
+    this.state.published += 1;
   }
 
   async release(): Promise<void> {}
 
-  transport = async (state: ScenarioState): Promise<void> => {
-    state.publishAttempts += 1;
-    if (this.failTransportOnce && state.publishAttempts === 1) throw new Error('transport unavailable');
-    state.deliveries += 1;
-    if (state.deliveries === 1) state.logicalEffects += 1;
+  transport = async (): Promise<void> => {
+    this.state.publishAttempts += 1;
+    if (this.failTransportOnce && this.state.publishAttempts === 1) throw new Error('transport unavailable');
+    this.state.deliveries += 1;
+    if (this.state.deliveries === 1) this.state.logicalEffects += 1;
   };
+}
+
+class ScenarioRecoveryStore {
+  private readonly candidate = new Map<string, {
+    request: ToolExecutionRequest;
+    state: RecoveryCandidate['state'];
+    leaseExpiresAt: Date | null;
+    owner: string | null;
+  }>();
+
+  seed(runId: string, request: ToolExecutionRequest, state: RecoveryCandidate['state'], leaseExpiresAt: Date | null = null, owner: string | null = null): void {
+    this.candidate.set(runId, { request, state, leaseExpiresAt, owner });
+  }
+
+  claim(runId: string, owner: string, now: Date): boolean {
+    const candidate = this.candidate.get(runId);
+    if (!candidate || (candidate.leaseExpiresAt && candidate.leaseExpiresAt > now)) return false;
+    candidate.owner = owner;
+    candidate.leaseExpiresAt = new Date(now.getTime() + 30_000);
+    return true;
+  }
+
+  reclaimExpired(now: Date): boolean {
+    for (const candidate of this.candidate.values()) {
+      if (candidate.leaseExpiresAt && candidate.leaseExpiresAt <= now) {
+        candidate.owner = null;
+        candidate.leaseExpiresAt = null;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  complete(runId: string): void {
+    const candidate = this.candidate.get(runId);
+    if (candidate) {
+      candidate.state = 'SUCCEEDED';
+      candidate.owner = null;
+      candidate.leaseExpiresAt = null;
+    }
+  }
 }
 
 export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterName: BenchmarkAdapter): Promise<BenchmarkScenarioResult> {
@@ -112,9 +159,17 @@ export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterN
 
   const state: ScenarioState = { toolExecutions: 0, externalEffects: 0, outboxEvents: 0, atomicCommits: 0, publishAttempts: 0, published: 0, acknowledgementsBeforeTransport: 0, deliveries: 0, logicalEffects: 0 };
   const store = new ScenarioStore(state);
+  let toolExecutionCount = 0;
   const service = new ToolExecutionService({
     authorize: async () => testCase.id !== 'B02' && testCase.id !== 'B03',
-    execute: async () => ({ caseId: testCase.id, adapter: adapter.framework, ok: true }),
+    execute: async (request) => {
+      toolExecutionCount += 1;
+      if (testCase.id === 'B10' && toolExecutionCount === 1) {
+        state.externalEffects += 1;
+        throw new Error('worker crashed after external effect');
+      }
+      return { caseId: testCase.id, adapter: adapter.framework, ok: true };
+    },
     store,
   });
   const request = (input: unknown, key = `key-${testCase.id}`): ToolExecutionRequest => ({
@@ -123,6 +178,7 @@ export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterN
     context: { actorId: 'benchmark-actor', tenantId: 'benchmark-tenant', permissions: ['tool:benchmark.effect'] },
     idempotencyKey: key,
   });
+  const coordinator = new RecoveryCoordinator(service);
 
   try {
     switch (testCase.id) {
@@ -145,20 +201,65 @@ export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterN
       }
       case 'B06': await service.execute(request({ value: 'atomic' })); break;
       case 'B07': {
-        const repository = new ScenarioOutboxRepository(true);
-        const publisher = new OutboxPublisher(repository, () => repository.transport(state));
+        const repository = new ScenarioOutboxRepository(state, true);
+        const publisher = new OutboxPublisher(repository, repository.transport);
         await publisher.publishBatch(1, 'benchmark-worker');
         await publisher.publishBatch(1, 'benchmark-worker');
-        state.published = state.publishAttempts === 2 ? 1 : 0;
         return { invariantViolations: [], details: `adapter: ${adapter.framework}; publish attempts: ${state.publishAttempts}; published: ${state.published}; ack before transport: ${state.acknowledgementsBeforeTransport > 0}` };
       }
       case 'B08': {
-        const repository = new ScenarioOutboxRepository(false, true);
-        const publisher = new OutboxPublisher(repository, () => repository.transport(state));
+        const repository = new ScenarioOutboxRepository(state, false, true);
+        const publisher = new OutboxPublisher(repository, repository.transport);
         await publisher.publishBatch(1, 'benchmark-worker');
         await publisher.publishBatch(1, 'benchmark-worker');
-        state.published = 1;
         return { invariantViolations: [], details: `adapter: ${adapter.framework}; deliveries: ${state.deliveries}; logical effects: ${state.logicalEffects}; published: ${state.published}` };
+      }
+      case 'B09': {
+        const recoveryStore = new ScenarioRecoveryStore();
+        const candidateRequest = request({ value: 'crash-after-claim' });
+        await store.reserve({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, actorId: candidateRequest.context.actorId, input: candidateRequest.input });
+        await store.fail({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, error: new Error('worker crashed'), retryable: true });
+        const now = new Date('2026-01-01T00:00:00Z');
+        recoveryStore.seed(run.runId, candidateRequest, 'FAILED_RETRYABLE', new Date(now.getTime() - 1), 'dead-worker');
+        const reclaimed = recoveryStore.reclaimExpired(now);
+        const claimed = recoveryStore.claim(run.runId, 'recovery-worker-2', now);
+        const recovered = claimed ? await coordinator.recover({ request: candidateRequest, state: 'FAILED_RETRYABLE' }) : null;
+        if (recovered) recoveryStore.complete(run.runId);
+        return { invariantViolations: [], details: `adapter: ${adapter.framework}; lease reclaimed: ${reclaimed}; recovered: ${recovered ? 1 : 0}; external effects: ${state.externalEffects}` };
+      }
+      case 'B10': {
+        const candidateRequest = request({ value: 'crash-during-tool' });
+        try { await service.execute(candidateRequest); } catch { /* simulated worker crash */ }
+        const recovered = await coordinator.recover({ request: candidateRequest, state: 'FAILED_RETRYABLE' });
+        return { invariantViolations: [], details: `adapter: ${adapter.framework}; recovered: ${recovered ? 1 : 0}; external effects: ${state.externalEffects}; tool executions: ${toolExecutionCount}` };
+      }
+      case 'B11': {
+        const candidateRequest = request({ value: 'crash-after-result' });
+        await service.execute(candidateRequest);
+        const recovered = await coordinator.recover({ request: candidateRequest, state: 'SUCCEEDED' });
+        return { invariantViolations: [], details: `adapter: ${adapter.framework}; recovered: ${recovered ? 1 : 0}; outbox events: ${state.outboxEvents}; external effects: ${state.externalEffects}` };
+      }
+      case 'B12': {
+        const candidateRequest = request({ value: 'crash-after-outbox' });
+        await service.execute(candidateRequest);
+        const repository = new ScenarioOutboxRepository(state, false, true);
+        const publisher = new OutboxPublisher(repository, repository.transport);
+        await publisher.publishBatch(1, 'benchmark-worker');
+        await publisher.publishBatch(1, 'benchmark-worker');
+        const recovered = await coordinator.recover({ request: candidateRequest, state: 'SUCCEEDED' });
+        return { invariantViolations: [], details: `adapter: ${adapter.framework}; deliveries: ${state.deliveries}; logical effects: ${state.logicalEffects}; recovered: ${recovered ? 1 : 0}` };
+      }
+      case 'B13': {
+        const recoveryStore = new ScenarioRecoveryStore();
+        const candidateRequest = request({ value: 'expired-lease' });
+        await store.reserve({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, actorId: candidateRequest.context.actorId, input: candidateRequest.input });
+        await store.fail({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, error: new Error('lease expired'), retryable: true });
+        const now = new Date('2026-01-01T00:00:00Z');
+        recoveryStore.seed(run.runId, candidateRequest, 'FAILED_RETRYABLE', new Date(now.getTime() - 1), 'expired-worker');
+        const reclaimed = recoveryStore.reclaimExpired(now);
+        const claimed = recoveryStore.claim(run.runId, 'replacement-worker', now);
+        const recovered = claimed ? await coordinator.recover({ request: candidateRequest, state: 'FAILED_RETRYABLE' }) : null;
+        return { invariantViolations: [], details: `adapter: ${adapter.framework}; expired lease reclaimed: ${reclaimed}; recovered: ${recovered ? 1 : 0}; external effects: ${state.externalEffects}` };
       }
       default: throw new Error(`Scenario executor not implemented for ${testCase.id}`);
     }
