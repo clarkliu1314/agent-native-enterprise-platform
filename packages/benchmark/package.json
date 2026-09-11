@@ -14,6 +14,7 @@
     "@agent-native/adapter-langgraph": "workspace:*",
     "@agent-native/adapter-mastra": "workspace:*",
     "@agent-native/runtime": "workspace:*",
-    "@agent-native/runtime-contract": "workspace:*"
+    "@agent-native/runtime-contract": "workspace:*",
+    "@agent-native/tool-runtime": "workspace:*"
   }
 }
