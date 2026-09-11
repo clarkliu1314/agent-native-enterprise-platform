@@ -41,13 +41,28 @@ function toEventView(row: Record<string, unknown>): RuntimeEventView {
 export class PostgresRuntimeRepositories implements DurableRepositories {
   constructor(private readonly db: TransactionRunner & SqlClient) {}
 
-  async createRun(command: CreateRunCommand, runId: string): Promise<RunView> {
+  async admitRun(input: { command: CreateRunCommand; commandHash: string; runId: string; eventId: string }): Promise<RunView> {
     return this.db.transaction(async (tx) => {
+      await tx.query(
+        `INSERT INTO idempotency_keys (idempotency_key, command_hash, run_id)
+         VALUES ($1, $2, $3)`,
+        [input.command.idempotencyKey ?? `run:${input.runId}`, input.commandHash, input.runId],
+      );
       const inserted = await tx.query<Record<string, unknown>>(
         `INSERT INTO agent_runs (run_id, agent_id, state, input, metadata)
          VALUES ($1, $2, 'QUEUED', $3::jsonb, $4::jsonb)
          RETURNING *`,
-        [runId, command.agentId, json(command.input), json(command.metadata ?? {})],
+        [input.runId, input.command.agentId, json(input.command.input), json(input.command.metadata ?? {})],
+      );
+      const event = await tx.query<Record<string, unknown>>(
+        `INSERT INTO agent_events (event_id, run_id, sequence, type, payload)
+         VALUES ($1, $2, 1, 'RUN_CREATED', $3::jsonb) RETURNING *`,
+        [input.eventId, input.runId, json({ executionMode: input.command.executionMode ?? 'async' })],
+      );
+      await tx.query(
+        `INSERT INTO outbox_events (outbox_id, event_id, topic, payload)
+         VALUES ($1, $2, 'agent.run', $3::jsonb)`,
+        [`outbox:${event.rows[0].event_id}`, input.eventId, json(event.rows[0].payload)],
       );
       return toRunView(inserted.rows[0]);
     });
@@ -129,8 +144,9 @@ export class PostgresRuntimeRepositories implements DurableRepositories {
 
   async appendEvent(input: { runId: string; type: string; payload: unknown; fencingToken?: bigint }): Promise<RuntimeEventView> {
     return this.db.transaction(async (tx) => {
+      await tx.query('SELECT run_id FROM agent_runs WHERE run_id = $1 FOR UPDATE', [input.runId]);
       const next = await tx.query<{ next_sequence: string }>(
-        `SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence FROM agent_events WHERE run_id = $1 FOR UPDATE`,
+        'SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence FROM agent_events WHERE run_id = $1',
         [input.runId],
       );
       const sequence = BigInt(String(next.rows[0].next_sequence));
@@ -179,16 +195,11 @@ export class PostgresRuntimeRepositories implements DurableRepositories {
     if (!row) return null;
     const payload = row.payload instanceof Uint8Array ? row.payload : new Uint8Array(row.payload as ArrayBuffer);
     return {
-      checkpointId: String(row.checkpoint_id),
-      runId: String(row.run_id),
-      turnId: row.turn_id ? String(row.turn_id) : undefined,
-      sequence: asBigInt(row.sequence),
-      fencingToken: asBigInt(row.fencing_token),
-      adapter: String(row.adapter),
-      adapterVersion: String(row.adapter_version),
-      schemaVersion: Number(row.schema_version),
-      createdAt: new Date(String(row.created_at)).toISOString(),
-      payload,
+      checkpointId: String(row.checkpoint_id), runId: String(row.run_id),
+      turnId: row.turn_id ? String(row.turn_id) : undefined, sequence: asBigInt(row.sequence),
+      fencingToken: asBigInt(row.fencing_token), adapter: String(row.adapter),
+      adapterVersion: String(row.adapter_version), schemaVersion: Number(row.schema_version),
+      createdAt: new Date(String(row.created_at)).toISOString(), payload,
     };
   }
 
