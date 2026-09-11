@@ -61,14 +61,14 @@
 
 ### Task 7: 16-case benchmark
 
-**Status:** In progress — all 16 benchmark definitions, the 64-case adapter matrix, the unified runner contract, and executable scenario work through the first slices are implemented. Run #194 exposed a real benchmark-package export defect (`benchmarkCases` was imported but not exported from `packages/benchmark/src/scenario-runner.ts`); the defect was fixed in commit `5bda30a333c1f9f447d2fc2aea99471e4f54d399`. The next authoritative CI result must verify the repaired benchmark package and then continue B09-B16 and deterministic artifact hard gates.
+**Status:** In progress — all 16 benchmark definitions, the 64-case adapter matrix, the unified runner contract, and executable scenario work through B16 are present. Run #275 exposed two issues on the then-checked-out PR merge head: the benchmark case-id contract was too broad for the B14-B16 `Extract<>` type, and the Compose benchmark reported four B16 assertion failures. The B16 log came from an older merge head whose assertion expected `terminal completions: 1`, while the current benchmark test contract expects the canonical `outbox events: 1`; the current B16 PostgreSQL scenario itself reports exactly one claim winner, one logical effect, and one outbox event. The type defect is now fixed by making the 16 benchmark IDs a closed `BenchmarkCaseId` union in commit `2aaf4f435f7b04bf98ef6e18305457abe2d54751`. A fresh CI run is required to verify the fix against the current branch head.
 
 - [x] Encode every benchmark with fixture, initial DB state, Mock LLM/Tool, exact steps, SQL assertions, expected result, and failure criteria.
 - [x] Execute the same matrix across all four adapters through one framework-neutral contract.
 - [ ] Replace the contract-only runner with real scenario execution and hard safety-invariant gates.
 - [x] Start real scenario execution with B01-B08 using the actual ToolExecutionService and OutboxPublisher against deterministic scenario stores.
-- [ ] Implement executable B09-B13 recovery/crash scenarios using the real RecoveryCoordinator and recovery-store semantics.
-- [ ] Implement executable B14-B16 retry/backoff, terminal-failure, and concurrent-worker scenarios.
+- [x] Implement executable B09-B13 recovery/crash scenarios using the real RecoveryCoordinator and recovery-store semantics.
+- [x] Implement executable B14-B16 retry/backoff, terminal-failure, and concurrent-worker scenarios.
 - [ ] Emit deterministic machine-readable benchmark results and CI artifacts.
 
 ### Task 8: Local Docker Compose environment
@@ -93,18 +93,21 @@
 
 ### Task 10: CI and verification
 
-**Status:** In progress. The CI workflow already verifies repository typecheck, API typecheck/build, deployment-boundary tests, full tests, and Compose smoke. Run #203 was green for the prior packaging-hardening checkpoint; Run #194 then failed on the benchmark package export and was fixed as noted above. The latest benchmark branch head is `8db5437610c38e294349c24368037ee8bf3390db`; it had no workflow run attached when inspected, so a documentation checkpoint commit was added to retrigger the PR workflow. The current follow-up commit is `4464230487f4b5e792613c545d52309db98c1bd9`.
+**Status:** In progress. Run #275 failed before the normal test suite because repository typecheck stopped on B14-B16: `Extract<BenchmarkCase['id'], 'B14' | 'B15' | 'B16'>` evaluated to `never` because `BenchmarkCase['id']` was only `B${string}`. The Compose job independently executed 90 benchmark tests and reached B16; only the four adapter-specific B16 assertions failed on the older merge head, while B01-B15 passed and the worker/migration smoke checks passed. The type contract has now been corrected in commit `2aaf4f435f7b04bf98ef6e18305457abe2d54751`; the next CI run is the authoritative verification for this fix.
 
 - [x] Run type checking, unit/integration tests, and deployment-boundary contract tests in CI.
 - [x] Add a workspace packaging contract covering stable `main`/`types`/root `exports` and workspace dependency exportability.
 - [ ] Verify the workspace packaging contract in CI after the entrypoint hardening changes.
-- [ ] Verify the repaired benchmark package export and B09-B16 executable scenarios in CI.
+- [ ] Verify the closed benchmark-case type and B09-B16 executable scenarios in CI after Run #275.
 - [ ] Add/verify formatting checks if the repository adopts a formatter contract.
 - [ ] Require all benchmark safety contracts before merge.
 - [ ] Publish deterministic benchmark artifacts.
 
-## Latest CI re-trigger checkpoint
+## Run #275 root-cause checkpoint
 
-- Commit `4464230487f4b5e792613c545d52309db98c1bd9` updates the implementation/status documentation only; it does not alter runtime behavior.
-- The checkpoint exists specifically to force a fresh `pull_request` CI event after the repaired benchmark head had no workflow run attached.
-- The resulting CI run, once GitHub schedules it, is the authoritative verification for the new head. It must not be conflated with Run #189, #194, or #203.
+- `test` job failed at repository `pnpm typecheck`, before API typecheck/build, deployment-boundary verification, benchmark hard gate, and the full test suite.
+- Exact compiler failures were B14/B15/B16 arguments rejected as `never` in `packages/benchmark/src/postgres-tail-scenarios.test.ts`.
+- `compose-smoke` reached the real 64-scenario matrix and reported 86 passing tests / 4 failing B16 adapter assertions. PostgreSQL, Redis, migration, and worker smoke all started successfully; the benchmark container alone exited 1.
+- The four B16 failures were identical and reflected an assertion-contract mismatch on the older PR merge head (`terminal completions: 1` expected versus the current canonical B16 detail contract using `outbox events: 1`). No PostgreSQL claim-safety failure was observed: the scenario reported `claim winners: 1; logical effects: 1; outbox events: 1`.
+- Fix commit: `2aaf4f435f7b04bf98ef6e18305457abe2d54751` — close `BenchmarkCase['id']` over the exact B01-B16 set so the existing B14-B16 `Extract<>` types are sound.
+- No CI result is claimed for the fix yet; the commit currently has no workflow run attached at the time this plan was updated.
