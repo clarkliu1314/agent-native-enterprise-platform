@@ -36,11 +36,19 @@ export class DurableRuntimeService implements RuntimeFacade {
   }
   async executeRunBounded(runId: string, owner: string, deadlineAt: Date): Promise<ExecuteBoundedResult> {
     let run = await this.resumeRun(runId, owner); if (run.state !== 'RUNNING') return { run, terminal: true }; if (this.clock.now() >= deadlineAt) return { run, terminal: false };
-    const result = await this.adapter.run({ run, signal: AbortSignal.timeout(Math.max(1, deadlineAt.getTime() - this.clock.now().getTime())) });
-    const nextState = result.kind;
-    assertValidDurableTransition('RUNNING', nextState);
-    run = await this.repos.transitionRunAndEmit({ runId, owner, fencingToken: run.fencingToken, from: 'RUNNING', to: nextState, error: result.error, eventType: `RUN_${result.kind}`, eventPayload: { output: result.output, error: result.error }, topic: 'agent.run' });
-    return { run, terminal: run.state === 'SUCCEEDED' || run.state === 'FAILED' || run.state === 'CANCELLED' };
+    try {
+      const result = await this.adapter.run({ run, signal: AbortSignal.timeout(Math.max(1, deadlineAt.getTime() - this.clock.now().getTime())) });
+      const nextState = result.kind;
+      assertValidDurableTransition('RUNNING', nextState);
+      run = await this.repos.transitionRunAndEmit({ runId, owner, fencingToken: run.fencingToken, from: 'RUNNING', to: nextState, error: result.error, eventType: `RUN_${result.kind}`, eventPayload: { output: result.output, error: result.error }, topic: 'agent.run' });
+      return { run, terminal: run.state === 'SUCCEEDED' || run.state === 'FAILED' || run.state === 'CANCELLED' };
+    } catch (error) {
+      if (isDeadlineError(error)) {
+        const current = await this.requireRun(runId);
+        return { run: current, terminal: current.state === 'SUCCEEDED' || current.state === 'FAILED' || current.state === 'CANCELLED' };
+      }
+      throw error;
+    }
   }
   async getRun(runId: string): Promise<RunView> { return this.requireRun(runId); }
   async listRunEvents(runId: string, afterSequence?: bigint): Promise<RuntimeEventView[]> { await this.requireRun(runId); return this.repos.listEvents(runId, afterSequence); }
@@ -48,3 +56,5 @@ export class DurableRuntimeService implements RuntimeFacade {
   async getToolCall(toolCallId: string): Promise<unknown> { return this.repos.getToolCall ? this.repos.getToolCall(toolCallId) : null; }
   private async requireRun(runId: string): Promise<RunView> { const run = await this.repos.getRun(runId); if (!run) throw new RunNotFoundError(runId); return run; }
 }
+
+function isDeadlineError(error: unknown): boolean { return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError'); }
