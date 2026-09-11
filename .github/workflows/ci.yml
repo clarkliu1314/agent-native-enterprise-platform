@@ -46,7 +46,15 @@ jobs:
       - name: Verify deployment boundary
         run: pnpm exec vitest run packages/deployment-boundary apps/api
       - name: Test
+        id: test
         run: pnpm test
+      - name: Upload benchmark report
+        if: steps.test.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: artifacts/benchmark-results.json
+          if-no-files-found: error
 
   compose-smoke:
     runs-on: ubuntu-latest
