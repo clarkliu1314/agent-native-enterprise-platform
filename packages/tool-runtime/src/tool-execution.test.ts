@@ -35,7 +35,7 @@ describe('ToolExecutionService', () => {
 
   it('persists one result and one outbox event for one successful side effect', async () => {
     const commits: unknown[] = [];
-    const service = new ToolExecutionService({ authorize: async () => true, execute: async () => ({ companyId: 'company-1' }), persistResultAndPublishOutbox: async (commit) => commits.push(commit) });
+    const service = new ToolExecutionService({ authorize: async () => true, execute: async () => ({ companyId: 'company-1' }), persistResultAndPublishOutbox: async (commit) => { commits.push(commit); } });
     await service.execute({ tool, input: { name: 'Acme Capital' }, context, idempotencyKey: 'idem-outbox-1' });
     expect(commits).toHaveLength(1);
     expect(commits[0]).toMatchObject({ idempotencyKey: 'idem-outbox-1', toolName: 'crm.create_company', outboxEvent: { type: 'tool.execution.completed' } });
