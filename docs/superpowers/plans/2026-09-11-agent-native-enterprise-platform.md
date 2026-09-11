@@ -111,3 +111,10 @@
 - The four B16 failures were identical and reflected an assertion-contract mismatch on the older PR merge head (`terminal completions: 1` expected versus the current canonical B16 detail contract using `outbox events: 1`). No PostgreSQL claim-safety failure was observed: the scenario reported `claim winners: 1; logical effects: 1; outbox events: 1`.
 - Fix commit: `2aaf4f435f7b04bf98ef6e18305457abe2d54751` — close `BenchmarkCase['id']` over the exact B01-B16 set so the existing B14-B16 `Extract<>` types are sound.
 - No CI result is claimed for the fix yet; the commit currently has no workflow run attached at the time this plan was updated.
+
+## Resubmission checkpoint
+
+- The PR is `#3`, targeting `main`, and its live head is `7b089fc92627364bfb1cdf4a702462ae9726a20a`.
+- Run #275 was executed against the earlier merge head `b79d5a27d029aea3cacbf4e69b8f69c07ad80d79`, not the current PR head. The current head is five commits ahead of that run and contains the closed benchmark-case fix plus the synchronized plan/test changes.
+- GitHub currently reports no workflow run attached to either the fix commit or the current head. Therefore this checkpoint deliberately makes no GREEN claim.
+- The next authoritative evidence must be a new `pull_request` CI run for the current head, followed by inspection of every job before marking Task 10 verification items complete.
