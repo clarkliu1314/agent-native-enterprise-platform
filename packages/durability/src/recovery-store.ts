@@ -112,10 +112,7 @@ export class RecoveryCandidateStore {
       );
       await client.query('COMMIT');
       return {
-        runId,
-        owner,
-        leaseToken,
-        leaseExpiresAt,
+        runId, owner, leaseToken, leaseExpiresAt,
         attempts: Number(row.recovery_attempts),
         request: row.recovery_request as ToolExecutionRequest,
         state: row.recovery_state as RecoveryState,
@@ -156,31 +153,42 @@ export class RecoveryCandidateStore {
     const baseBackoffMs = input.baseBackoffMs ?? 1_000;
     const maxBackoffMs = input.maxBackoffMs ?? 60_000;
     const now = input.now ?? new Date();
-    const nextAttempts = await this.pool.query(
-      `SELECT recovery_attempts FROM agent_runs
-       WHERE run_id = $1 AND recovery_owner = $2 AND recovery_lease_token = $3
-       FOR UPDATE`,
-      [input.runId, input.owner, input.leaseToken],
-    );
-    if (!nextAttempts.rows[0]) throw new Error(`Recovery lease lost: ${input.runId}`);
-    const attempts = Number(nextAttempts.rows[0].recovery_attempts) + 1;
-    const terminal = !input.retryable || attempts >= maxAttempts;
-    const state: RecoveryState = terminal ? 'FAILED_FINAL' : 'FAILED_RETRYABLE';
-    const delay = Math.min(maxBackoffMs, baseBackoffMs * 2 ** Math.max(0, attempts - 1));
-    const nextAttemptAt = new Date(now.getTime() + delay);
-    await this.pool.query(
-      `UPDATE agent_runs
-       SET recovery_state = $4,
-           recovery_attempts = $5,
-           next_attempt_at = $6,
-           recovery_owner = NULL,
-           recovery_lease_token = NULL,
-           recovery_lease_expires_at = NULL,
-           metadata = jsonb_set(metadata, '{recovery_last_error}', $7::jsonb, true)
-       WHERE run_id = $1 AND recovery_owner = $2 AND recovery_lease_token = $3`,
-      [input.runId, input.owner, input.leaseToken, state, attempts, nextAttemptAt, JSON.stringify(serializeError(input.error))],
-    );
-    return state;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const current = await client.query(
+        `SELECT recovery_attempts FROM agent_runs
+         WHERE run_id = $1 AND recovery_owner = $2 AND recovery_lease_token = $3
+         FOR UPDATE`,
+        [input.runId, input.owner, input.leaseToken],
+      );
+      if (!current.rows[0]) throw new Error(`Recovery lease lost: ${input.runId}`);
+      const attempts = Number(current.rows[0].recovery_attempts) + 1;
+      const terminal = !input.retryable || attempts >= maxAttempts;
+      const state: RecoveryState = terminal ? 'FAILED_FINAL' : 'FAILED_RETRYABLE';
+      const delay = Math.min(maxBackoffMs, baseBackoffMs * 2 ** Math.max(0, attempts - 1));
+      const nextAttemptAt = new Date(now.getTime() + delay);
+      const updated = await client.query(
+        `UPDATE agent_runs
+         SET recovery_state = $4,
+             recovery_attempts = $5,
+             next_attempt_at = $6,
+             recovery_owner = NULL,
+             recovery_lease_token = NULL,
+             recovery_lease_expires_at = NULL,
+             metadata = jsonb_set(metadata, '{recovery_last_error}', $7::jsonb, true)
+         WHERE run_id = $1 AND recovery_owner = $2 AND recovery_lease_token = $3`,
+        [input.runId, input.owner, input.leaseToken, state, attempts, nextAttemptAt, JSON.stringify(serializeError(input.error))],
+      );
+      if (updated.rowCount !== 1) throw new Error(`Recovery lease lost: ${input.runId}`);
+      await client.query('COMMIT');
+      return state;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 
