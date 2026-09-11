@@ -1,18 +1,9 @@
 import type { Pool, PoolClient } from 'pg';
-import type { ToolExecutionCommit, ToolExecutionStore } from './tool-execution';
-
-/**
- * Identity used to scope an idempotency record.
- *
- * The idempotency key is supplied by the caller, but it is not a global business
- * identifier. Tenant + tool + key form the logical command identity, which prevents
- * one enterprise tenant from accidentally replaying another tenant's result.
- */
-export interface ToolExecutionLookup {
-  idempotencyKey: string;
-  tenantId: string;
-  toolName: string;
-}
+import type {
+  ToolExecutionCommit,
+  ToolExecutionLookup,
+  ToolExecutionStore,
+} from './tool-execution';
 
 /**
  * PostgreSQL implementation of the idempotency + outbox boundary.
@@ -102,21 +93,11 @@ export class PostgresToolExecutionStore implements ToolExecutionStore {
   /**
    * Read a completed result using its full logical identity.
    *
-   * The string overload is retained only as a small compatibility seam for the early
-   * reference tests. Production runtime code should use the scoped object form so a
-   * caller cannot read a result from another tenant or tool namespace.
+   * The lookup type is defined by the framework-neutral tool execution contract rather
+   * than by this adapter. That keeps the PostgreSQL implementation from creating a
+   * second, incompatible public type with the same name.
    */
-  async get(lookup: string | ToolExecutionLookup): Promise<unknown | null> {
-    if (typeof lookup === 'string') {
-      const result = await this.pool.query(
-        `SELECT output
-           FROM tool_execution_idempotency
-          WHERE idempotency_key = $1`,
-        [lookup],
-      );
-      return result.rows[0]?.output ?? null;
-    }
-
+  async get(lookup: ToolExecutionLookup): Promise<unknown | null> {
     const result = await this.pool.query(
       `SELECT output
          FROM tool_execution_idempotency
