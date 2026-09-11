@@ -14,6 +14,7 @@ import { InMemoryAgentRuntime } from '@agent-native/runtime';
 import type { BenchmarkAdapter, BenchmarkCase } from './index';
 import { createBenchmarkAdapters } from './adapters';
 import { executePostgresRecoveryScenario } from './postgres-recovery-scenarios';
+import { executePostgresTailScenario } from './postgres-tail-scenarios';
 import type { BenchmarkScenarioResult } from './scenario-runner';
 
 interface ScenarioState {
@@ -95,6 +96,9 @@ class ScenarioRecoveryStore {
 export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterName: BenchmarkAdapter): Promise<BenchmarkScenarioResult> {
   if (process.env.DATABASE_URL && ['B09', 'B10', 'B11', 'B12', 'B13'].includes(testCase.id)) {
     return executePostgresRecoveryScenario(testCase.id, adapterName, process.env.DATABASE_URL);
+  }
+  if (process.env.DATABASE_URL && ['B14', 'B15', 'B16'].includes(testCase.id)) {
+    return executePostgresTailScenario(testCase.id, adapterName, process.env.DATABASE_URL);
   }
 
   const runtime = new InMemoryAgentRuntime();
