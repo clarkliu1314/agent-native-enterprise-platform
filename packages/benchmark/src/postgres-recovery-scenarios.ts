@@ -1,22 +1,14 @@
 import { Pool } from 'pg';
-import {
-  RecoveryCandidateStore,
-  RecoveryCoordinator,
-  type RecoveryState,
-} from '@agent-native/durability';
+import { RecoveryCandidateStore, RecoveryCoordinator, type RecoveryState } from '@agent-native/durability';
 import { PostgresToolExecutionStore as DurableToolStore, ToolExecutionService, type ToolExecutionRequest } from '@agent-native/tool-runtime';
 import { OutboxPublisher, PostgresOutboxRepository, type OutboxMessage, type OutboxRepository } from '@agent-native/outbox';
 import type { BenchmarkAdapter, BenchmarkCase } from './index';
 import type { BenchmarkScenarioResult } from './scenario-runner';
 
-export async function executePostgresRecoveryScenario(
-  caseId: BenchmarkCase['id'],
-  adapter: BenchmarkAdapter,
-  databaseUrl: string,
-): Promise<BenchmarkScenarioResult> {
-  if (!['B09', 'B10', 'B11', 'B12', 'B13'].includes(caseId)) {
-    throw new Error(`Unsupported PostgreSQL recovery benchmark case: ${caseId}`);
-  }
+const ELIGIBILITY_SKEW_MS = 5_000;
+
+export async function executePostgresRecoveryScenario(caseId: BenchmarkCase['id'], adapter: BenchmarkAdapter, databaseUrl: string): Promise<BenchmarkScenarioResult> {
+  if (!['B09', 'B10', 'B11', 'B12', 'B13'].includes(caseId)) throw new Error(`Unsupported PostgreSQL recovery benchmark case: ${caseId}`);
 
   const pool = new Pool({ connectionString: databaseUrl });
   const toolStore = new DurableToolStore(pool);
@@ -36,10 +28,11 @@ export async function executePostgresRecoveryScenario(
 
     if (caseId === 'B09') {
       await seedRetryable(pool, request);
-      const now = new Date();
-      await seedRecoveryCandidate(pool, request, 'IN_PROGRESS', new Date(now.getTime() - 1_000), 'dead-worker');
-      const reclaimed = (await recoveryStore.reclaimExpiredRecoveryCandidates(now)) > 0;
-      const lease = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'replacement-worker', 'lease-b09', 30_000, now);
+      const expiredAt = new Date(Date.now() - 1_000);
+      await seedRecoveryCandidate(pool, request, 'IN_PROGRESS', expiredAt, 'dead-worker');
+      const recoveryNow = new Date(Date.now() + ELIGIBILITY_SKEW_MS);
+      const reclaimed = (await recoveryStore.reclaimExpiredRecoveryCandidates(recoveryNow)) > 0;
+      const lease = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'replacement-worker', 'lease-b09', 30_000, recoveryNow);
       const recovered = lease ? await coordinator.recover({ request, state: 'FAILED_RETRYABLE' }) : null;
       if (recovered && lease) await recoveryStore.completeRecovery(lease.runId, lease.owner, lease.leaseToken);
       return result(caseId, adapter, {
@@ -54,18 +47,15 @@ export async function executePostgresRecoveryScenario(
         authorize: async () => true,
         execute: async () => {
           state.externalEffects += 1;
-          if (!crashed) {
-            crashed = true;
-            throw new Error('worker crashed after external effect');
-          }
+          if (!crashed) { crashed = true; throw new Error('worker crashed after external effect'); }
           return { caseId, adapter };
         },
         store: toolStore,
       });
       try { await crashingService.execute(request); } catch { /* simulated worker crash */ }
       await seedRecoveryCandidate(pool, request, 'FAILED_RETRYABLE', null, null);
-      const now = new Date();
-      const lease = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'recovery-worker', 'lease-b10', 30_000, now);
+      const recoveryNow = new Date(Date.now() + ELIGIBILITY_SKEW_MS);
+      const lease = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'recovery-worker', 'lease-b10', 30_000, recoveryNow);
       const recovered = lease ? await coordinator.recover({ request, state: 'FAILED_RETRYABLE' }) : null;
       if (recovered && lease) await recoveryStore.completeRecovery(lease.runId, lease.owner, lease.leaseToken);
       return result(caseId, adapter, {
@@ -78,8 +68,8 @@ export async function executePostgresRecoveryScenario(
       const output = { caseId, adapter, recoveredOutput: true };
       await seedSucceededWithoutOutbox(pool, request, output);
       await seedRecoveryCandidate(pool, request, 'IN_PROGRESS', null, null);
-      const now = new Date();
-      const lease = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'recovery-worker', 'lease-b11', 30_000, now);
+      const recoveryNow = new Date(Date.now() + ELIGIBILITY_SKEW_MS);
+      const lease = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'recovery-worker', 'lease-b11', 30_000, recoveryNow);
       const recovered = lease ? await coordinator.recover({ request, state: 'IN_PROGRESS' }) : null;
       if (recovered && lease) await recoveryStore.completeRecovery(lease.runId, lease.owner, lease.leaseToken);
       const rows = await pool.query('SELECT COUNT(*)::int AS count FROM outbox_events WHERE tenant_id = $1 AND idempotency_key = $2', [request.context.tenantId, request.idempotencyKey]);
@@ -112,13 +102,14 @@ export async function executePostgresRecoveryScenario(
     }
 
     await seedRetryable(pool, request);
-    const now = new Date();
-    const firstLease = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'expired-worker', 'lease-b13', 1, now);
+    const initialNow = new Date(Date.now() + ELIGIBILITY_SKEW_MS);
+    const firstLease = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'expired-worker', 'lease-b13', 1, initialNow);
     if (!firstLease) return result(caseId, adapter, { violations: ['idempotency'], details: `postgresql: true; adapter: ${adapter}; expired lease reclaimed: false; recovered: 0; external effects: 0` });
-    const expiredAt = new Date(now.getTime() + 2_000);
+    const expiredAt = new Date(initialNow.getTime() + 2_000);
     await pool.query('UPDATE agent_runs SET recovery_lease_expires_at = $2 WHERE run_id = $1', [requestRunId(prefix), expiredAt]);
-    const reclaimed = (await recoveryStore.reclaimExpiredRecoveryCandidates(new Date(expiredAt.getTime() + 1))) > 0;
-    const replacement = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'replacement-worker', 'lease-b13-replacement', 30_000, new Date(expiredAt.getTime() + 1));
+    const reclaimNow = new Date(expiredAt.getTime() + 1_000);
+    const reclaimed = (await recoveryStore.reclaimExpiredRecoveryCandidates(reclaimNow)) > 0;
+    const replacement = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'replacement-worker', 'lease-b13-replacement', 30_000, reclaimNow);
     const recovered = replacement ? await coordinator.recover({ request, state: 'FAILED_RETRYABLE' }) : null;
     if (recovered && replacement) await recoveryStore.completeRecovery(replacement.runId, replacement.owner, replacement.leaseToken);
     return result(caseId, adapter, {
@@ -131,7 +122,7 @@ export async function executePostgresRecoveryScenario(
   }
 }
 
-function createService(store: DurableToolStore, state: { externalEffects: number; toolExecutions: number }, caseId: string): ToolExecutionService {
+function createService(store: DurableToolExecutionStore, state: { externalEffects: number; toolExecutions: number }, caseId: string): ToolExecutionService {
   return new ToolExecutionService({
     authorize: async () => true,
     execute: async () => {
@@ -144,33 +135,23 @@ function createService(store: DurableToolStore, state: { externalEffects: number
 }
 
 function createRequest(prefix: string): ToolExecutionRequest {
-  return {
-    tool: { name: 'benchmark.effect', description: 'deterministic benchmark tool', sideEffect: true },
-    input: { prefix },
-    context: { actorId: 'benchmark-actor', tenantId: prefix, permissions: ['tool:benchmark.effect'] },
-    idempotencyKey: `${prefix}:request`,
-  };
+  return { tool: { name: 'benchmark.effect', description: 'deterministic benchmark tool', sideEffect: true }, input: { prefix }, context: { actorId: 'benchmark-actor', tenantId: prefix, permissions: ['tool:benchmark.effect'] }, idempotencyKey: `${prefix}:request` };
 }
-
 function requestRunId(prefix: string): string { return `${prefix}:run`; }
 
 async function seedRetryable(pool: Pool, request: ToolExecutionRequest): Promise<void> {
-  const store = new DurableToolStore(pool);
+  const store = new DurableToolExecutionStore(pool);
   await store.reserve({ idempotencyKey: request.idempotencyKey, tenantId: request.context.tenantId, toolName: request.tool.name, actorId: request.context.actorId, input: request.input });
   await store.fail({ idempotencyKey: request.idempotencyKey, tenantId: request.context.tenantId, toolName: request.tool.name, error: new Error('retryable crash'), retryable: true });
 }
 
 async function seedRecoveryCandidate(pool: Pool, request: ToolExecutionRequest, state: RecoveryState, leaseExpiresAt: Date | null, owner: string | null): Promise<void> {
   const runId = requestRunId(request.context.tenantId);
-  await pool.query(
-    `INSERT INTO agent_runs (run_id, agent_id, state, input, version, metadata, recovery_state, recovery_attempts, next_attempt_at, recovery_owner, recovery_lease_token, recovery_lease_expires_at)
-     VALUES ($1, 'benchmark-agent', 'RUNNING', '{}', 0, $2::jsonb, $3, 0, NOW(), $4, $5, $6)`,
-    [runId, JSON.stringify({ recovery_request: request }), state, owner, owner ? `${owner}-token` : null, leaseExpiresAt],
-  );
+  await pool.query(`INSERT INTO agent_runs (run_id, agent_id, state, input, version, metadata, recovery_state, recovery_attempts, next_attempt_at, recovery_owner, recovery_lease_token, recovery_lease_expires_at) VALUES ($1, 'benchmark-agent', 'RUNNING', '{}', 0, $2::jsonb, $3, 0, NOW(), $4, $5, $6)`, [runId, JSON.stringify({ recovery_request: request }), state, owner, owner ? `${owner}-token` : null, leaseExpiresAt]);
 }
 
 async function seedSucceededWithoutOutbox(pool: Pool, request: ToolExecutionRequest, output: unknown): Promise<void> {
-  const store = new DurableToolStore(pool);
+  const store = new DurableToolExecutionStore(pool);
   await store.reserve({ idempotencyKey: request.idempotencyKey, tenantId: request.context.tenantId, toolName: request.tool.name, actorId: request.context.actorId, input: request.input });
   await pool.query(`UPDATE tool_execution_idempotency SET status = 'SUCCEEDED', output = $3::jsonb, lease_expires_at = NULL WHERE tenant_id = $1 AND idempotency_key = $2`, [request.context.tenantId, request.idempotencyKey, JSON.stringify(output)]);
 }
@@ -181,9 +162,7 @@ async function cleanup(pool: Pool, prefix: string): Promise<void> {
   await pool.query('DELETE FROM tool_execution_idempotency WHERE tenant_id = $1', [prefix]);
 }
 
-function result(_caseId: string, _adapter: BenchmarkAdapter, value: { violations: string[]; details: string }): BenchmarkScenarioResult {
-  return { invariantViolations: value.violations, details: value.details };
-}
+function result(_caseId: string, _adapter: BenchmarkAdapter, value: { violations: string[]; details: string }): BenchmarkScenarioResult { return { invariantViolations: value.violations, details: value.details }; }
 
 class AckFailingRepository implements OutboxRepository {
   private failed = false;
@@ -192,10 +171,7 @@ class AckFailingRepository implements OutboxRepository {
   release(eventId: string, workerId: string, error: unknown) { return this.delegate.release(eventId, workerId, error); }
   async markPublished(eventId: string, workerId: string): Promise<void> {
     this.onAttempt();
-    if (!this.failed) {
-      this.failed = true;
-      throw new Error('acknowledgement lost');
-    }
+    if (!this.failed) { this.failed = true; throw new Error('acknowledgement lost'); }
     await this.delegate.markPublished(eventId, workerId);
   }
 }
