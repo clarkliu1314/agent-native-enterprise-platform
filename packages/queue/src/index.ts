@@ -1,7 +1,8 @@
-import { createClient, type RedisClientType } from 'redis';
+import { createClient } from 'redis';
 import type { QueueConsumer, QueuePublisher } from '@agent-native/runtime';
 
 const DEFAULT_PREFIX = 'agent-native:queue:';
+type RedisClient = ReturnType<typeof createClient>;
 
 export interface RedisStreamQueueOptions {
   url: string;
@@ -10,8 +11,6 @@ export interface RedisStreamQueueOptions {
   consumer?: string;
   blockMs?: number;
 }
-
-type RedisClient = RedisClientType;
 
 export class RedisStreamPublisher implements QueuePublisher {
   private readonly client: RedisClient;
@@ -32,13 +31,7 @@ export class RedisStreamPublisher implements QueuePublisher {
 
   async publish(topic: string, payload: unknown): Promise<void> {
     await this.connect();
-    await this.client.sendCommand([
-      'XADD',
-      this.stream(topic),
-      '*',
-      'payload',
-      JSON.stringify(payload),
-    ]);
+    await this.client.sendCommand(['XADD', this.stream(topic), '*', 'payload', JSON.stringify(payload)]);
   }
 
   async close(): Promise<void> {
@@ -78,20 +71,17 @@ export class RedisStreamConsumer implements QueueConsumer {
 
   async consume(handler: (message: { topic: string; payload: unknown }) => Promise<void>): Promise<void> {
     await this.connect();
-    // Streams are created by publishers. The group is created lazily for each
-    // stream when the first message is observed, so startup has no race with API admission.
     for (;;) {
-      const topics = await this.discoverStreams();
-      for (const stream of topics) {
+      const streams = await this.discoverStreams();
+      for (const stream of streams) {
         await this.ensureGroup(stream);
-        const messages = await this.read(stream);
-        for (const message of messages) {
+        for (const message of await this.read(stream)) {
           const topic = stream.slice(this.prefix.length);
           try {
             await handler({ topic, payload: JSON.parse(message.payload) });
             await this.client.sendCommand(['XACK', stream, this.group, message.id]);
           } catch {
-            // Leave the entry pending. A later consumer can claim it with XAUTOCLAIM.
+            // Leave failed deliveries pending for XAUTOCLAIM.
           }
         }
         await this.reclaimPending(stream, handler);
@@ -108,8 +98,8 @@ export class RedisStreamConsumer implements QueueConsumer {
   }
 
   private async discoverStreams(): Promise<string[]> {
-    const keys = await this.client.sendCommand(['SCAN', '0', 'MATCH', `${this.prefix}*`, 'COUNT', '100']) as [string, string[]];
-    return keys[1];
+    const result = await this.client.sendCommand(['SCAN', '0', 'MATCH', `${this.prefix}*`, 'COUNT', '100']) as [string, string[]];
+    return result[1] ?? [];
   }
 
   private async ensureGroup(stream: string): Promise<void> {
@@ -150,10 +140,6 @@ export class RedisStreamConsumer implements QueueConsumer {
         // Keep pending for the next claim cycle.
       }
     }
-  }
-
-  private stream(topic: string): string {
-    return `${this.prefix}${topic}`;
   }
 }
 
