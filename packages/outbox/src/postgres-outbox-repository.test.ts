@@ -50,6 +50,23 @@ describe('PostgresOutboxRepository', () => {
     expect(row.rows[0]).toMatchObject({ attempts: 2, locked_by: 'worker-b' });
   });
 
+  it('C4: a worker crash after broker publish causes redelivery, not loss', async () => {
+    await seed('repo-c4', 'company-c4');
+    const [first] = await repository.claim(1, 'worker-a');
+    expect(first).toBeDefined();
+
+    // Broker publish succeeds, but the worker dies before markPublished().
+    await pool.query("UPDATE outbox_events SET locked_at = NOW() - INTERVAL '10 minutes' WHERE event_id = $1", [first!.eventId]);
+    const [redelivered] = await repository.claim(1, 'worker-b');
+
+    expect(redelivered!.eventId).toBe(first!.eventId);
+    expect(redelivered!.eventType).toBe('tool.execution.completed');
+    const row = await pool.query('SELECT published_at, attempts, status FROM outbox_events WHERE event_id = $1', [first!.eventId]);
+    expect(row.rows[0].published_at).toBeNull();
+    expect(row.rows[0].attempts).toBe(2);
+    expect(row.rows[0].status).not.toBe('PUBLISHED');
+  });
+
   it('uses exponential retry backoff and dead-letters after the configured limit', async () => {
     await seed('repo-retry', 'company-4');
     for (let attempt = 1; attempt <= 3; attempt += 1) {
