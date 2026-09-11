@@ -28,25 +28,23 @@ export class DurableRuntimeService implements RuntimeFacade {
   async resumeRun(runId: string, owner: string): Promise<RunView> { const current = await this.requireRun(runId); if (current.state === 'SUCCEEDED' || current.state === 'FAILED' || current.state === 'CANCELLED') return current; const claimed = await this.repos.claimRun(runId, owner, this.leaseMs); if (!claimed) throw new Error(`Run cannot be claimed: ${runId}`); return claimed.run; }
   async cancelRun(runId: string, reason?: string): Promise<RunView> {
     const run = await this.requireRun(runId); if (run.state === 'SUCCEEDED' || run.state === 'FAILED' || run.state === 'CANCELLED') return run; assertValidDurableTransition(run.state, 'CANCELLED');
-    const updated = await this.repos.transitionRun({ runId, from: run.state, to: 'CANCELLED', error: reason }); await this.appendEventAndOutbox(runId, 'RUN_CANCELLED', { reason }); return updated;
+    return this.repos.transitionRunAndEmit({ runId, from: run.state, to: 'CANCELLED', error: reason, eventType: 'RUN_CANCELLED', eventPayload: { reason }, topic: 'agent.run' });
   }
   async approveRun(runId: string, approvalId: string): Promise<RunView> {
     const run = await this.requireRun(runId); if (run.state !== 'WAITING') throw new Error(`Run is not waiting for approval: ${runId}`); assertValidDurableTransition('WAITING', 'QUEUED');
-    const updated = await this.repos.transitionRun({ runId, from: 'WAITING', to: 'QUEUED' }); await this.appendEventAndOutbox(runId, 'RUN_APPROVED', { approvalId }); return updated;
+    return this.repos.transitionRunAndEmit({ runId, from: 'WAITING', to: 'QUEUED', eventType: 'RUN_APPROVED', eventPayload: { approvalId }, topic: 'agent.run' });
   }
   async executeRunBounded(runId: string, owner: string, deadlineAt: Date): Promise<ExecuteBoundedResult> {
     let run = await this.resumeRun(runId, owner); if (run.state !== 'RUNNING') return { run, terminal: true }; if (this.clock.now() >= deadlineAt) return { run, terminal: false };
     const result = await this.adapter.run({ run, signal: AbortSignal.timeout(Math.max(1, deadlineAt.getTime() - this.clock.now().getTime())) });
     const nextState = result.kind;
     assertValidDurableTransition('RUNNING', nextState);
-    run = await this.repos.transitionRun({ runId, owner, fencingToken: run.fencingToken, from: 'RUNNING', to: nextState, error: result.error });
-    await this.appendEventAndOutbox(runId, `RUN_${result.kind}`, { output: result.output, error: result.error }, run.fencingToken);
+    run = await this.repos.transitionRunAndEmit({ runId, owner, fencingToken: run.fencingToken, from: 'RUNNING', to: nextState, error: result.error, eventType: `RUN_${result.kind}`, eventPayload: { output: result.output, error: result.error }, topic: 'agent.run' });
     return { run, terminal: run.state === 'SUCCEEDED' || run.state === 'FAILED' || run.state === 'CANCELLED' };
   }
   async getRun(runId: string): Promise<RunView> { return this.requireRun(runId); }
   async listRunEvents(runId: string, afterSequence?: bigint): Promise<RuntimeEventView[]> { await this.requireRun(runId); return this.repos.listEvents(runId, afterSequence); }
   async getRunCheckpoint(runId: string): Promise<CheckpointEnvelope | null> { await this.requireRun(runId); return this.repos.getLatestCheckpoint(runId); }
   async getToolCall(toolCallId: string): Promise<unknown> { return this.repos.getToolCall ? this.repos.getToolCall(toolCallId) : null; }
-  private async appendEventAndOutbox(runId: string, type: string, payload: unknown, fencingToken?: bigint): Promise<void> { if (!this.repos.appendEventAndOutbox) throw new Error('Atomic event/outbox persistence is required'); await this.repos.appendEventAndOutbox({ runId, type, payload, topic: 'agent.run', fencingToken }); }
   private async requireRun(runId: string): Promise<RunView> { const run = await this.repos.getRun(runId); if (!run) throw new RunNotFoundError(runId); return run; }
 }
