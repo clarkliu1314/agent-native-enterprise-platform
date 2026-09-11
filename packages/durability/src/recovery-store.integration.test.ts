@@ -98,16 +98,16 @@ describe('RecoveryCandidateStore PostgreSQL contract', () => {
   it('never rediscovers terminal states', async () => {
     await pool.query(`
       UPDATE agent_runs
-      SET recovery_state = 'FAILED_FINAL', next_attempt_at = $2
+      SET recovery_state = 'FAILED_FINAL'
       WHERE run_id = 'recovery-1'
-    `, [now]);
+    `);
     expect(await store.findRecoverableCandidates(10, now)).toEqual([]);
 
     await pool.query(`
       UPDATE agent_runs
-      SET recovery_state = 'SUCCEEDED', next_attempt_at = $2
+      SET recovery_state = 'SUCCEEDED'
       WHERE run_id = 'recovery-1'
-    `, [now]);
+    `);
     expect(await store.findRecoverableCandidates(10, now)).toEqual([]);
   });
 
