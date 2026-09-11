@@ -17,6 +17,7 @@
     "@agent-native/outbox": "workspace:*",
     "@agent-native/runtime": "workspace:*",
     "@agent-native/runtime-contract": "workspace:*",
-    "@agent-native/tool-runtime": "workspace:*"
+    "@agent-native/tool-runtime": "workspace:*",
+    "pg": "^8.16.3"
   }
 }
