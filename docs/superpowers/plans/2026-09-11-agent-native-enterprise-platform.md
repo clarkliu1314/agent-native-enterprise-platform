@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, pnpm workspaces, Vitest, PostgreSQL, Redis, Node.js workers, Docker Compose, Vercel-compatible Node request boundary. Adapter packages will be added incrementally for AgentScope, LangGraph, Eino, and Mastra.
 
-**Spec:** Project architecture and benchmark specification from the prior design conversation, including Tool Permission, Crash Recovery, Outbox + Idempotency, and the 16-case adapter benchmark.
+**Spec:** Project architecture and benchmark specification from the prior design conversation, including Tool Permission, Crash Recovery, Outbox + Idempotency, the 16-case adapter benchmark, and the approved Durable Runtime Composition + Vercel Request-Boundary Design in `docs/superpowers/specs/2026-09-12-durable-runtime-composition-design.md`.
 
 ## Global Constraints
 
@@ -121,4 +121,28 @@
 
 ## Next architectural phase
 
-The benchmark/CI foundation is now closed. The next implementation phase is **Durable Runtime Composition + Vercel Request-Boundary Integration**: instantiate the real PostgreSQL-backed runtime/repositories/services as a composition root, wire the stateless API request boundary to that runtime, keep workers/outbox/recovery independently deployable, and add end-to-end API → durable state → worker/recovery verification. This phase must preserve the existing framework-neutral Runtime Contract and benchmark safety gates.
+**Status: Design approved; implementation plan pending.** The benchmark/CI foundation is closed and the Durable Runtime Composition + Vercel Request-Boundary Design has been approved and recorded in `docs/superpowers/specs/2026-09-12-durable-runtime-composition-design.md`.
+
+The next implementation phase is to instantiate the real PostgreSQL-backed runtime/repositories/services as separate API, Worker, Recovery, and Outbox Publisher composition roots; wire the stateless Vercel-compatible API request boundary to `RuntimeFacade`; preserve async `202` plus bounded sync semantics; enforce transactional command idempotency, Event + Outbox atomicity, lease/fencing, durable Model/Tool steps, and opaque Adapter checkpoints; and add end-to-end API → durable state → Worker/Recovery verification.
+
+**Design decisions locked:**
+
+1. `POST /runs`: async by default (`202`), optional bounded sync (`200` if terminal within budget; otherwise `202` and durable continuation).
+2. Scheduler: Outbox/Redis primary path with PostgreSQL `FOR UPDATE SKIP LOCKED` recovery fallback.
+3. Worker ownership: lease + fencing token.
+4. Fencing: PostgreSQL monotonic `BIGINT`, database-generated, checked on every durable worker write.
+5. Run FSM: `QUEUED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
+6. PostgreSQL ownership: lifecycle, turns, model calls, tool calls, events, outbox, idempotency, checkpoints, and wait conditions have explicit responsibilities.
+7. Application boundary: `RuntimeFacade` is the sole API/Worker/Recovery application boundary.
+8. Dependency direction: RuntimeFacade depends only on framework-neutral Ports; composition roots inject infrastructure.
+9. Tool execution: permission before effect; side-effecting tools require external idempotency or durable reconciliation/wait.
+10. Model execution: independent durable Model Step with logical call identity, request hash, provider attempts, and replay policy.
+11. Framework adapters: Runtime is the execution authority; adapters only drive framework execution and translate to the Runtime Contract.
+12. Checkpoints: Runtime-owned envelope + Adapter-owned opaque payload.
+13. API idempotency: PostgreSQL transactional idempotency key + command hash + original-response replay.
+14. Event ordering: transactional Event + Outbox with per-Run monotonic sequence.
+15. Composition roots: API, Worker, Recovery, and Outbox Publisher are separate processes/roots sharing the same Runtime implementation and framework-neutral Ports.
+
+### Required next gate
+
+Before touching production code, use the approved design to write the implementation plan with explicit TDD RED/GREEN steps, affected files, migration/repository contracts, composition-root wiring, end-to-end tests, and verification checkpoints. Only after that plan is approved should implementation begin.
