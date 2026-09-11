@@ -6,6 +6,7 @@ import type { DurableRepositories } from './repositories';
 export interface ToolExecutionInput {
   runId: string;
   agentId: string;
+  owner: string;
   fencingToken: bigint;
   toolCallId: string;
   toolName: string;
@@ -25,14 +26,23 @@ export class ToolExecutionService {
     const allowed = await this.permission.authorize({ runId: input.runId, agentId: input.agentId, toolName: input.toolName, input: input.input });
     if (!allowed) throw new ToolPermissionDeniedError(input.toolName);
 
-    const existing = await this.repos.getToolCall?.(input.toolCallId);
-    if (existing && typeof existing === 'object' && existing !== null && 'output' in existing) return (existing as { output: unknown }).output;
+    const existing = await this.repos.getToolCall(input.toolCallId);
+    if (existing?.status === 'SUCCEEDED') return existing.output;
 
-    const output = await this.invoker.invoke({ toolName: input.toolName, input: input.input, idempotencyKey: input.idempotencyKey });
-    if (input.kind === 'SIDE_EFFECTING') {
-      const stillOwned = await this.repos.renewLease(input.runId, '', input.fencingToken, 1);
-      if (!stillOwned) throw new LostFencingError(input.runId);
+    await this.repos.createToolCall({
+      toolCallId: input.toolCallId, runId: input.runId, fencingToken: input.fencingToken,
+      idempotencyKey: input.idempotencyKey, toolName: input.toolName, kind: input.kind,
+      status: 'RUNNING', input: input.input,
+    });
+
+    try {
+      const output = await this.invoker.invoke({ toolName: input.toolName, input: input.input, idempotencyKey: input.idempotencyKey });
+      const persisted = await this.repos.completeToolCall({ toolCallId: input.toolCallId, runId: input.runId, fencingToken: input.fencingToken, status: 'SUCCEEDED', output });
+      if (!persisted) throw new LostFencingError(input.runId);
+      return output;
+    } catch (error) {
+      await this.repos.completeToolCall({ toolCallId: input.toolCallId, runId: input.runId, fencingToken: input.fencingToken, status: 'FAILED', error: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
-    return output;
   }
 }
