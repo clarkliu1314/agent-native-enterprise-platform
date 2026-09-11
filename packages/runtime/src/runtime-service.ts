@@ -22,6 +22,12 @@ export interface RuntimeServiceOptions {
   adapter: RuntimeAdapter;
 }
 
+export interface ClaimedRunExecution {
+  runId: string;
+  owner: string;
+  fencingToken: bigint;
+}
+
 export class DurableRuntimeService implements RuntimeFacade {
   private readonly leaseMs: number;
   private readonly heartbeatMs: number;
@@ -52,26 +58,36 @@ export class DurableRuntimeService implements RuntimeFacade {
     return this.repos.transitionRunAndEmit({ runId, from: 'WAITING', to: 'QUEUED', eventType: 'RUN_APPROVED', eventPayload: { approvalId }, topic: 'agent.run' });
   }
   async executeRunBounded(runId: string, owner: string, deadlineAt: Date): Promise<ExecuteBoundedResult> {
-    let run = await this.resumeRun(runId, owner); if (run.state !== 'RUNNING') return { run, terminal: true }; if (this.clock.now() >= deadlineAt) return { run, terminal: false };
+    const run = await this.resumeRun(runId, owner);
+    if (run.state !== 'RUNNING') return { run, terminal: true };
+    return this.executeClaimedRunBounded({ runId, owner, fencingToken: run.fencingToken }, deadlineAt);
+  }
+
+  /** Internal worker/recovery boundary: execute a run already reclaimed with its fencing token. */
+  async executeClaimedRunBounded(claim: ClaimedRunExecution, deadlineAt: Date): Promise<ExecuteBoundedResult> {
+    let run = await this.requireRun(claim.runId);
+    if (run.state !== 'RUNNING' || run.fencingToken !== claim.fencingToken) {
+      return { run, terminal: run.state === 'SUCCEEDED' || run.state === 'FAILED' || run.state === 'CANCELLED' };
+    }
+    if (this.clock.now() >= deadlineAt) return { run, terminal: false };
     const executionController = new AbortController();
     const timeoutMs = Math.max(1, deadlineAt.getTime() - this.clock.now().getTime());
     const timeout = setTimeout(() => executionController.abort(new DOMException('Execution deadline exceeded', 'TimeoutError')), timeoutMs);
     timeout.unref?.();
     const heartbeat = createLeaseHeartbeat(
-      ({ runId: claimedRunId, owner: claimedOwner, fencingToken, leaseMs }) => this.repos.renewLease(claimedRunId, claimedOwner, fencingToken, leaseMs),
+      ({ runId, owner, fencingToken, leaseMs }) => this.repos.renewLease(runId, owner, fencingToken, leaseMs),
       { intervalMs: this.heartbeatMs },
-    ).start({ runId, owner, fencingToken: run.fencingToken, leaseMs: this.leaseMs }, () => {
+    ).start(claim, () => {
       executionController.abort(new DOMException('Run lease lost', 'AbortError'));
     });
     try {
       const result = await this.adapter.run({ run, signal: executionController.signal });
-      const nextState = result.kind;
-      assertValidDurableTransition('RUNNING', nextState);
-      run = await this.repos.transitionRunAndEmit({ runId, owner, fencingToken: run.fencingToken, from: 'RUNNING', to: nextState, error: result.error, eventType: `RUN_${result.kind}`, eventPayload: { output: result.output, error: result.error }, topic: 'agent.run' });
+      assertValidDurableTransition('RUNNING', result.kind);
+      run = await this.repos.transitionRunAndEmit({ runId: claim.runId, owner: claim.owner, fencingToken: claim.fencingToken, from: 'RUNNING', to: result.kind, error: result.error, eventType: `RUN_${result.kind}`, eventPayload: { output: result.output, error: result.error }, topic: 'agent.run' });
       return { run, terminal: run.state === 'SUCCEEDED' || run.state === 'FAILED' || run.state === 'CANCELLED' };
     } catch (error) {
       if (isDeadlineError(error)) {
-        const current = await this.requireRun(runId);
+        const current = await this.requireRun(claim.runId);
         return { run: current, terminal: current.state === 'SUCCEEDED' || current.state === 'FAILED' || current.state === 'CANCELLED' };
       }
       throw error;
