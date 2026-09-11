@@ -123,7 +123,7 @@
 
 **Status: Implementation in progress.** The approved design was converted into `docs/superpowers/plans/2026-09-12-durable-runtime-composition.md` in commit `aeeebb69aecebee3636ca6e3945ebf0d49ba6309`, and execution is underway on `feat/durable-runtime-composition` / PR #5.
 
-The first slice establishes the real PostgreSQL transaction adapter, durable repository contracts, RuntimeFacade lifecycle orchestration, opaque checkpoint service, durable Model/Tool execution boundaries, recovery/outbox services, and a stateless Vercel-compatible durable handler/composition root. The implementation remains gated by CI; observed Run #328 failed only because it tested an older PR merge head, while its Compose smoke passed. A subsequent typecheck correction is in flight and no GREEN claim is made until the newest head is verified.
+Run #343 is authoritative GREEN for the preceding runtime slice: repository typecheck, API typecheck/build, deployment-boundary verification, benchmark hard gate (64/64), full test suite (173/173), and Compose smoke all passed. After that GREEN checkpoint, the implementation advanced with atomic lifecycle transition + Event + Outbox persistence, bounded-deadline continuation handling, and the first facade-driven durable worker queue service. These newest commits are separately gated by the next CI run and are not yet marked GREEN until verified.
 
 **Design decisions locked:**
 
