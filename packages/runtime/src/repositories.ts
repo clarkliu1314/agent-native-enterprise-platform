@@ -17,6 +17,19 @@ export interface IdempotencyRecord {
   response?: unknown;
 }
 
+export interface ToolCallRecord {
+  toolCallId: string;
+  runId: string;
+  fencingToken: bigint;
+  idempotencyKey: string;
+  toolName: string;
+  kind: 'PURE' | 'SIDE_EFFECTING';
+  status: 'REQUESTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'WAITING';
+  input: unknown;
+  output?: unknown;
+  error?: string;
+}
+
 export interface DurableRepositories {
   admitRun(input: { command: CreateRunCommand; commandHash: string; runId: string; eventId: string }): Promise<RunView>;
   getRun(runId: string): Promise<RunView | null>;
@@ -29,6 +42,9 @@ export interface DurableRepositories {
   appendEventAndOutbox(input: { runId: string; type: string; payload: unknown; topic: string; fencingToken?: bigint }): Promise<RuntimeEventView>;
   listEvents(runId: string, afterSequence?: bigint): Promise<RuntimeEventView[]>;
   createOutbox(input: { eventId: string; topic: string; payload: unknown }): Promise<void>;
+  createToolCall(input: ToolCallRecord): Promise<void>;
+  getToolCall(toolCallId: string): Promise<ToolCallRecord | null>;
+  completeToolCall(input: { toolCallId: string; runId: string; fencingToken: bigint; status: 'SUCCEEDED' | 'FAILED'; output?: unknown; error?: string }): Promise<boolean>;
   saveCheckpoint(checkpoint: CheckpointEnvelope): Promise<void>;
   getLatestCheckpoint(runId: string): Promise<CheckpointEnvelope | null>;
   findExpiredRuns(limit: number): Promise<RunView[]>;
