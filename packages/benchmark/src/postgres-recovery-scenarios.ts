@@ -79,6 +79,7 @@ export async function executePostgresRecoveryScenario(caseId: BenchmarkCase['id'
     }
 
     await seedRetryable(pool, request);
+    await seedRecoveryCandidate(pool, request, 'IN_PROGRESS', null, null);
     const initialNow = new Date(Date.now() + ELIGIBILITY_SKEW_MS);
     const firstLease = await recoveryStore.claimRecoveryCandidate(requestRunId(prefix), 'expired-worker', 'lease-b13', 1, initialNow);
     if (!firstLease) return result(caseId, adapter, { violations: ['idempotency'], details: `postgresql: true; adapter: ${adapter}; expired lease reclaimed: false; recovered: 0; external effects: 0` });
