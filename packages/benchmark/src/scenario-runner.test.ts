@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { benchmarkCases, type BenchmarkScenarioExecutor, createBenchmarkRunner } from './scenario-runner';
+import { benchmarkAdapters, benchmarkCases, type BenchmarkScenarioExecutor, createBenchmarkRunner } from './scenario-runner';
 
 describe('benchmark scenario runner', () => {
   it('executes the supplied scenario instead of returning a contract-only result', async () => {
@@ -42,5 +42,21 @@ describe('benchmark scenario runner', () => {
     await expect(runner.run(benchmarkCases[0], 'agentscope')).rejects.toThrow(
       'Unknown benchmark invariant',
     );
+  });
+
+  it('executes all 64 case-adapter combinations in deterministic matrix order', async () => {
+    const calls: string[] = [];
+    const runner = createBenchmarkRunner(async (testCase, adapter) => {
+      calls.push(`${testCase.id}:${adapter}`);
+      return { invariantViolations: [], details: `${testCase.id}:${adapter}` };
+    });
+
+    const results = await runner.runAll();
+
+    expect(results).toHaveLength(64);
+    expect(calls).toEqual(
+      benchmarkCases.flatMap((testCase) => benchmarkAdapters.map((adapter) => `${testCase.id}:${adapter}`)),
+    );
+    expect(results.every((result) => result.passed)).toBe(true);
   });
 });
