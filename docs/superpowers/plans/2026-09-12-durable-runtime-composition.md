@@ -34,6 +34,7 @@
 - Create `packages/runtime/src/tool-execution-service.ts`: permission/idempotency/tool execution boundary.
 - Create `packages/runtime/src/model-execution-service.ts`: durable Model Call intent/attempt/result boundary.
 - Create `packages/runtime/src/checkpoint-service.ts`: runtime envelope persistence with opaque adapter payload.
+- Create `packages/runtime/src/durable-worker.ts`: RuntimeFacade-driven queue consumption and bounded execution slice.
 - Create `packages/runtime/src/index.ts`: public runtime package exports.
 - Create `packages/runtime/src/*.test.ts`: focused unit/contract tests for each service.
 - Modify `packages/runtime-contract/src/durable.ts`: add exact framework-neutral result/error/port contracts only when tests require them.
@@ -45,6 +46,14 @@
 - Create `apps/*/package.json` and minimal build/typecheck configuration where required by the workspace.
 - Extend `docker-compose.yml` only after the real runtime process contracts exist.
 - Modify this plan and the main plan at each completed implementation gate.
+
+## Progress Notes
+
+- Run #343 is verified green: repository typecheck, API typecheck/build, deployment boundary, 64/64 benchmark hard gate, full 173-test suite, and Compose smoke all passed.
+- Lifecycle transition + Event + Outbox is now represented by one repository transaction through `transitionRunAndEmit`; RuntimeFacade lifecycle commands use that atomic primitive.
+- Added a regression test proving lifecycle state is rolled back when Event/Outbox persistence fails.
+- Bounded execution deadline handling now treats `TimeoutError`/`AbortError` as a durable continuation boundary and returns the current Run instead of converting request expiry into an API 500.
+- Added a facade-driven `DurableWorker` queue contract and tests; process-root wiring, lease heartbeat, Recovery, and Publisher integration remain subsequent gates.
 
 ## Task 1: Repository and transaction primitives
 
@@ -58,9 +67,9 @@
 ## Task 2: RuntimeFacade lifecycle services
 
 - [ ] Write RED tests for `createRun`, `resumeRun`, `cancelRun`, `approveRun`, `getRun`, and event/checkpoint queries.
-- [ ] Implement the six-state FSM with terminal-state irreversibility and WAITING wake-up semantics.
-- [ ] Implement transactional Event + Outbox insertion and monotonic per-Run sequence allocation.
-- [ ] Implement API idempotency replay and 409 command-hash conflict semantics.
+- [x] Implement the six-state FSM with terminal-state irreversibility and WAITING wake-up semantics.
+- [x] Implement transactional Event + Outbox insertion and monotonic per-Run sequence allocation.
+- [x] Implement API idempotency replay and 409 command-hash conflict semantics.
 - [ ] Verify focused runtime service tests and repository integration tests.
 - [ ] Commit `feat(runtime): implement durable RuntimeFacade lifecycle`.
 
