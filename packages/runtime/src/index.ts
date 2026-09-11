@@ -2,6 +2,7 @@ export { InMemoryAgentRuntime } from './in-memory-runtime';
 export { DurableRuntimeService, hashCommand } from './runtime-service';
 export { PostgresDatabase } from './postgres-client';
 export { PostgresRuntimeRepositories } from './postgres-runtime-repositories';
+export { PostgresToolRepositories } from './postgres-tool-repositories';
 export { PostgresOutboxRepository } from './postgres-outbox-repository';
 export { OutboxPublisher } from './outbox-publisher';
 export { RecoveryCoordinator } from './recovery-coordinator';
