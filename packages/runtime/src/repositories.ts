@@ -24,20 +24,9 @@ export interface DurableRepositories {
   insertIdempotency(record: IdempotencyRecord): Promise<void>;
   claimRun(runId: string, owner: string, leaseMs: number): Promise<RunClaim | null>;
   renewLease(runId: string, owner: string, fencingToken: bigint, leaseMs: number): Promise<boolean>;
-  transitionRun(input: {
-    runId: string;
-    fencingToken?: bigint;
-    from: RunView['state'];
-    to: RunView['state'];
-    owner?: string;
-    error?: string;
-  }): Promise<RunView>;
-  appendEvent(input: {
-    runId: string;
-    type: string;
-    payload: unknown;
-    fencingToken?: bigint;
-  }): Promise<RuntimeEventView>;
+  transitionRun(input: { runId: string; fencingToken?: bigint; from: RunView['state']; to: RunView['state']; owner?: string; error?: string }): Promise<RunView>;
+  appendEvent(input: { runId: string; type: string; payload: unknown; fencingToken?: bigint }): Promise<RuntimeEventView>;
+  appendEventAndOutbox(input: { runId: string; type: string; payload: unknown; topic: string; fencingToken?: bigint }): Promise<RuntimeEventView>;
   listEvents(runId: string, afterSequence?: bigint): Promise<RuntimeEventView[]>;
   createOutbox(input: { eventId: string; topic: string; payload: unknown }): Promise<void>;
   saveCheckpoint(checkpoint: CheckpointEnvelope): Promise<void>;
