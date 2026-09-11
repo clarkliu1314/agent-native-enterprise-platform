@@ -90,4 +90,5 @@ export interface BenchmarkRunResult {
 
 export interface BenchmarkRunner {
   run(testCase: BenchmarkCase, adapter: BenchmarkAdapter): Promise<BenchmarkRunResult>;
+  runAll(): Promise<BenchmarkRunResult[]>;
 }
