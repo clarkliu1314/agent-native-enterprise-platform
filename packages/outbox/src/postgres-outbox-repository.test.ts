@@ -5,6 +5,7 @@ import { migrateOutbox } from './migrate';
 import { PostgresToolExecutionStore } from '@agent-native/tool-runtime';
 
 const databaseUrl = process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/agent_native';
+const TEST_TENANT = 'outbox-repository-test';
 
 describe('PostgresOutboxRepository', () => {
   const pool = new Pool({ connectionString: databaseUrl });
@@ -14,17 +15,25 @@ describe('PostgresOutboxRepository', () => {
   beforeAll(async () => {
     await store.migrate();
     await migrateOutbox(pool);
-    await pool.query('TRUNCATE TABLE tool_execution_idempotency, outbox_events');
+    await cleanupTestRows();
   });
 
-  afterAll(async () => pool.end());
+  afterAll(async () => {
+    await cleanupTestRows();
+    await pool.end();
+  });
 
   async function seed(key: string, companyId: string) {
-    await store.reserve({ idempotencyKey: key, tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: key } });
+    await store.reserve({ idempotencyKey: key, tenantId: TEST_TENANT, toolName: 'crm.create_company', actorId: 'user-1', input: { name: key } });
     await store.commit({
-      idempotencyKey: key, toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId },
-      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: key, toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId } },
+      idempotencyKey: key, toolName: 'crm.create_company', tenantId: TEST_TENANT, actorId: 'user-1', output: { companyId },
+      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: key, toolName: 'crm.create_company', tenantId: TEST_TENANT, actorId: 'user-1', output: { companyId } },
     });
+  }
+
+  async function cleanupTestRows() {
+    await pool.query('DELETE FROM tool_execution_idempotency WHERE tenant_id = $1', [TEST_TENANT]);
+    await pool.query('DELETE FROM outbox_events WHERE tenant_id = $1', [TEST_TENANT]);
   }
 
   it('atomically claims an available event with a worker lease', async () => {
@@ -74,7 +83,7 @@ describe('PostgresOutboxRepository', () => {
       await repository.release(claimed!.eventId, 'worker-a', new Error(`failure-${attempt}`));
       await pool.query('UPDATE outbox_events SET available_at = NOW() WHERE event_id = $1', [claimed!.eventId]);
     }
-    const row = await pool.query('SELECT status, attempts, last_error FROM outbox_events WHERE idempotency_key = $1', ['repo-retry']);
+    const row = await pool.query('SELECT status, attempts, last_error FROM outbox_events WHERE idempotency_key = $1 AND tenant_id = $2', ['repo-retry', TEST_TENANT]);
     expect(row.rows[0]).toMatchObject({ status: 'DEAD', attempts: 3, last_error: 'failure-3' });
   });
 });
