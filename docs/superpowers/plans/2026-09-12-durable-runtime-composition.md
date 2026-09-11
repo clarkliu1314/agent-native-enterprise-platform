@@ -51,6 +51,7 @@
 ## Progress Notes
 
 - Run #343 is verified green: repository typecheck, API typecheck/build, deployment boundary, 64/64 benchmark hard gate, full 173-test suite, and Compose smoke all passed.
+- Run #354 is verified green across both CI jobs; its test job passed repository typecheck, API typecheck/build, deployment boundary, benchmark hard gate, and full test suite, while Compose smoke passed benchmark, worker, and migration assertions.
 - Lifecycle transition + Event + Outbox is now represented by one repository transaction through `transitionRunAndEmit`; RuntimeFacade lifecycle commands use that atomic primitive.
 - Added a regression test proving lifecycle state is rolled back when Event/Outbox persistence fails.
 - Bounded execution deadline handling now treats `TimeoutError`/`AbortError` as a durable continuation boundary and returns the current Run instead of converting request expiry into an API 500.
@@ -58,7 +59,9 @@
 - Added a reusable fenced lease-heartbeat primitive; bounded runtime execution now renews the PostgreSQL lease with the claimed fencing token and aborts execution if the ownership check is lost.
 - Added Worker, Recovery, and Outbox Publisher composition-root packages that construct PostgreSQL-backed runtime infrastructure outside the Vercel request boundary.
 - Added a regression API test locking sync-deadline -> 202 behavior.
-- The latest implementation commits are awaiting a new GitHub Actions run; no new green claim is made beyond Run #343.
+- Recovery now serializes reclaimed ownership as `{ runId, owner, fencingToken }` on the internal `agent.run` queue contract; Worker can execute an already-reclaimed RUNNING row through an internal fenced execution boundary without violating the six-state FSM.
+- Added focused recovery/worker tests for reclaimed fencing handoff and ordinary queue execution.
+- The latest implementation commits are awaiting a new GitHub Actions run; no new green claim is made beyond Run #354.
 
 ## Task 1: Repository and transaction primitives
 
