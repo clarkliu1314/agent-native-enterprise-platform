@@ -5,12 +5,14 @@ import {
   PostgresToolRepositories,
 } from '@agent-native/runtime';
 import type { QueueConsumer, RuntimeAdapter } from '@agent-native/runtime';
+import { createRedisConsumer, type RedisStreamConsumer } from '@agent-native/queue';
 
 export interface WorkerComposition {
   database: PostgresDatabase;
   repositories: PostgresToolRepositories;
   runtime: DurableRuntimeService;
   worker: DurableWorker;
+  consumer: QueueConsumer;
 }
 
 export interface WorkerCompositionOptions {
@@ -20,10 +22,6 @@ export interface WorkerCompositionOptions {
   executionSliceMs?: number;
 }
 
-/**
- * Worker is a separate process root: it owns infrastructure construction but
- * delegates execution authority to the framework-neutral RuntimeFacade.
- */
 export function composeWorker(
   adapter: RuntimeAdapter,
   consumer: QueueConsumer,
@@ -40,7 +38,16 @@ export function composeWorker(
     owner: options.owner ?? `worker-${process.pid}`,
     executionSliceMs: options.executionSliceMs,
   });
-  return { database, repositories, runtime, worker };
+  return { database, repositories, runtime, worker, consumer };
+}
+
+export function composeRedisWorker(
+  adapter: RuntimeAdapter,
+  redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379',
+  options: WorkerCompositionOptions = {},
+): WorkerComposition & { consumer: RedisStreamConsumer } {
+  const consumer = createRedisConsumer(redisUrl);
+  return composeWorker(adapter, consumer, options);
 }
 
 export { RecoveryWorker } from './recovery-worker';
