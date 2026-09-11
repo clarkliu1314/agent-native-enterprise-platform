@@ -18,7 +18,7 @@ export interface IdempotencyRecord {
 }
 
 export interface DurableRepositories {
-  createRun(command: CreateRunCommand, runId: string): Promise<RunView>;
+  admitRun(input: { command: CreateRunCommand; commandHash: string; runId: string; eventId: string }): Promise<RunView>;
   getRun(runId: string): Promise<RunView | null>;
   getIdempotency(key: string): Promise<IdempotencyRecord | null>;
   insertIdempotency(record: IdempotencyRecord): Promise<void>;
