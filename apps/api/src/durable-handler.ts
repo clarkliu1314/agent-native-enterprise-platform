@@ -7,7 +7,6 @@ export interface DurableHandlerOptions { syncBudgetMs?: number; owner?: string; 
 export function createDurableHandler(runtime: RuntimeFacade, options: DurableHandlerOptions = {}) {
   const syncBudgetMs = options.syncBudgetMs ?? 8_000;
   const owner = options.owner ?? `api-${randomUUID()}`;
-
   return async function handler(request: Request): Promise<Response> {
     const url = new URL(request.url);
     try {
@@ -19,12 +18,12 @@ export function createDurableHandler(runtime: RuntimeFacade, options: DurableHan
         const created = await runtime.createRun(command);
         if (executionMode === 'sync' && !created.replayed) {
           const result = await runtime.executeRunBounded(created.run.runId, owner, new Date(Date.now() + syncBudgetMs));
-          return Response.json(result.run, { status: result.terminal ? 200 : 202 });
+          return jsonResponse(result.run, result.terminal ? 200 : 202);
         }
-        return Response.json(created.run, { status: created.run.state === 'SUCCEEDED' || created.run.state === 'FAILED' || created.run.state === 'CANCELLED' ? 200 : 202 });
+        return jsonResponse(created.run, created.run.state === 'SUCCEEDED' || created.run.state === 'FAILED' || created.run.state === 'CANCELLED' ? 200 : 202);
       }
       const match = url.pathname.match(/^\/runs\/([^/]+)$/);
-      if (request.method === 'GET' && match) return Response.json(await runtime.getRun(decodeURIComponent(match[1])), { status: 200 });
+      if (request.method === 'GET' && match) return jsonResponse(await runtime.getRun(decodeURIComponent(match[1])), 200);
       return Response.json({ error: 'not_found' }, { status: 404 });
     } catch (error) {
       if (error instanceof SyntaxError) return Response.json({ error: 'invalid_json' }, { status: 400 });
@@ -35,6 +34,7 @@ export function createDurableHandler(runtime: RuntimeFacade, options: DurableHan
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function jsonResponse(value: unknown, status: number): Response {
+  return new Response(JSON.stringify(value, (_key, item) => typeof item === 'bigint' ? item.toString() : item), { status, headers: { 'content-type': 'application/json' } });
 }
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
