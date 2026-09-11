@@ -98,7 +98,7 @@ export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterN
     return executePostgresRecoveryScenario(testCase.id, adapterName, process.env.DATABASE_URL);
   }
   if (process.env.DATABASE_URL && ['B14', 'B15', 'B16'].includes(testCase.id)) {
-    return executePostgresTailScenario(testCase.id, adapterName, process.env.DATABASE_URL);
+    return executePostgresTailScenario(testCase.id as Extract<BenchmarkCase['id'], 'B14' | 'B15' | 'B16'>, adapterName, process.env.DATABASE_URL);
   }
 
   const runtime = new InMemoryAgentRuntime();
