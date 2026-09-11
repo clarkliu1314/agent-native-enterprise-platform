@@ -92,4 +92,23 @@ describe('DurableRuntimeService', () => {
     expect(repos.current.state).toBe('QUEUED');
     expect(repos.events).toHaveLength(0);
   });
+
+  it('returns the durable RUNNING state when the bounded request deadline expires', async () => {
+    const repos = new FakeRepos();
+    const slowAdapter: RuntimeAdapter = {
+      ...adapter,
+      async run({ signal }) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 50);
+          signal?.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+        });
+        return { kind: 'SUCCEEDED', output: { ok: true } };
+      },
+    };
+    const service = new DurableRuntimeService(repos, { adapter: slowAdapter });
+    const created = await service.createRun({ agentId: 'agent', input: {} });
+    const result = await service.executeRunBounded(created.run.runId, 'worker-1', new Date(Date.now() + 5));
+    expect(result.terminal).toBe(false);
+    expect(result.run.state).toBe('RUNNING');
+  });
 });
