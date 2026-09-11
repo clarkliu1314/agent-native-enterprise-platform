@@ -17,6 +17,44 @@ describe('PostgresToolExecutionStore', () => {
     await pool.end();
   });
 
+  it('reserves a new key as IN_PROGRESS and replays after success', async () => {
+    const first = await store.reserve({ idempotencyKey: 'state-1', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme' } });
+    expect(first).toEqual({ kind: 'RESERVED', state: 'IN_PROGRESS' });
+
+    await store.commit({
+      idempotencyKey: 'state-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' },
+      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'state-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' } },
+    });
+
+    expect(await store.reserve({ idempotencyKey: 'state-1', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme' } })).toEqual({ kind: 'REPLAY', state: 'SUCCEEDED', output: { companyId: 'company-1' } });
+  });
+
+  it('rejects the same key with a different payload as an explicit conflict', async () => {
+    await store.reserve({ idempotencyKey: 'state-conflict', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme' } });
+    expect(await store.reserve({ idempotencyKey: 'state-conflict', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Beta' } })).toEqual({ kind: 'CONFLICT', state: 'IN_PROGRESS' });
+  });
+
+  it('allows a retryable failure to be reserved again after the failure transition', async () => {
+    await store.reserve({ idempotencyKey: 'state-retry', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Retry me' } });
+    await store.fail({ idempotencyKey: 'state-retry', tenantId: 'fund-1', toolName: 'crm.create_company', error: new Error('temporary'), retryable: true });
+    expect(await store.reserve({ idempotencyKey: 'state-retry', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Retry me' } })).toEqual({ kind: 'RETRY', state: 'FAILED_RETRYABLE' });
+  });
+
+  it('does not allow a final failure to execute again', async () => {
+    await store.reserve({ idempotencyKey: 'state-final', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Never retry' } });
+    await store.fail({ idempotencyKey: 'state-final', tenantId: 'fund-1', toolName: 'crm.create_company', error: new Error('validation failed'), retryable: false });
+    expect(await store.reserve({ idempotencyKey: 'state-final', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Never retry' } })).toEqual({ kind: 'CONFLICT', state: 'FAILED_FINAL' });
+  });
+
+  it('coordinates two workers so only one gets the reservation', async () => {
+    const results = await Promise.all([
+      store.reserve({ idempotencyKey: 'state-race', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'worker-1', input: { name: 'Race' } }),
+      store.reserve({ idempotencyKey: 'state-race', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'worker-2', input: { name: 'Race' } }),
+    ]);
+    expect(results.filter((result) => result.kind === 'RESERVED')).toHaveLength(1);
+    expect(results.filter((result) => result.kind === 'CONFLICT' && result.state === 'IN_PROGRESS')).toHaveLength(1);
+  });
+
   it('durably reloads an idempotent result after a new store instance is created', async () => {
     await store.commit({
       idempotencyKey: 'pg-idem-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1',
@@ -33,7 +71,7 @@ describe('PostgresToolExecutionStore', () => {
       output: { companyId: 'company-2' },
       outboxEvent: { type: 'tool.execution.completed' as const, idempotencyKey: 'pg-idem-duplicate', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-2' } },
     };
-    await store.commit(commit);
+    await store.reserve({ idempotencyKey: commit.idempotencyKey, tenantId: commit.tenantId, toolName: commit.toolName, actorId: commit.actorId, input: { name: 'Duplicate' } });
     await store.commit(commit);
     const rows = await pool.query(`SELECT (SELECT COUNT(*) FROM tool_execution_idempotency WHERE idempotency_key = $1) AS idempotency_count, (SELECT COUNT(*) FROM outbox_events WHERE idempotency_key = $1) AS outbox_count`, [commit.idempotencyKey]);
     expect(Number(rows.rows[0].idempotency_count)).toBe(1);
@@ -41,9 +79,9 @@ describe('PostgresToolExecutionStore', () => {
   });
 
   it('does not allow one tenant to read another tenant\'s idempotency result', async () => {
+    await store.reserve({ idempotencyKey: 'pg-tenant-isolation', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Secret' } });
     await store.commit({
-      idempotencyKey: 'pg-tenant-isolation', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1',
-      output: { companyId: 'company-secret' },
+      idempotencyKey: 'pg-tenant-isolation', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-secret' },
       outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'pg-tenant-isolation', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-secret' } },
     });
     expect(await store.get({ idempotencyKey: 'pg-tenant-isolation', tenantId: 'fund-2', toolName: 'crm.create_company' })).toBeNull();
