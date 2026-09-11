@@ -39,6 +39,10 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       - name: Typecheck
         run: pnpm typecheck
+      - name: Typecheck API
+        run: pnpm --filter @agent-native/api typecheck
+      - name: Build API boundary
+        run: pnpm --filter @agent-native/api build
       - name: Verify deployment boundary
         run: pnpm exec vitest run packages/deployment-boundary apps/api
       - name: Test
