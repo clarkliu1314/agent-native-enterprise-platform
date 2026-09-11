@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { RuntimeAdapter } from './ports';
+import type { RuntimeAdapter, QueuePublisher } from './ports';
 import type { DurableRepositories } from './repositories';
 
 export interface RecoveryOutcome {
@@ -10,7 +10,12 @@ export interface RecoveryOutcome {
 }
 
 export class RecoveryCoordinator {
-  constructor(private readonly repos: DurableRepositories, private readonly adapter: RuntimeAdapter, private readonly leaseMs = 30_000) {}
+  constructor(
+    private readonly repos: DurableRepositories,
+    private readonly adapter: RuntimeAdapter,
+    private readonly leaseMs = 30_000,
+    private readonly queue?: QueuePublisher,
+  ) {}
 
   async recoverExpired(limit = 25): Promise<RecoveryOutcome[]> {
     const candidates = await this.repos.findExpiredRuns(limit);
@@ -22,9 +27,23 @@ export class RecoveryCoordinator {
         outcomes.push({ runId: candidate.runId, recovered: false, action: 'SKIPPED' });
         continue;
       }
-      outcomes.push({ runId: candidate.runId, recovered: true, fencingToken: claim.fencingToken, action: 'RECLAIMED' });
-      void this.adapter;
+      try {
+        if (this.queue) {
+          await this.queue.publish('agent.run', {
+            runId: candidate.runId,
+            owner,
+            fencingToken: claim.fencingToken.toString(),
+            recovered: true,
+          });
+        }
+        outcomes.push({ runId: candidate.runId, recovered: true, fencingToken: claim.fencingToken, action: 'RECLAIMED' });
+      } catch (error) {
+        // The lease remains durable; a later recovery scan can reclaim it again.
+        void error;
+        outcomes.push({ runId: candidate.runId, recovered: false, fencingToken: claim.fencingToken, action: 'FAILED' });
+      }
     }
+    void this.adapter;
     return outcomes;
   }
 }
