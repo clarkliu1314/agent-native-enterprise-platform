@@ -14,7 +14,7 @@ function toEventView(row: Record<string, unknown>): RuntimeEventView {
 }
 
 export class PostgresRuntimeRepositories implements DurableRepositories {
-  constructor(private readonly db: TransactionRunner & SqlClient) {}
+  constructor(protected readonly db: TransactionRunner & SqlClient) {}
 
   async admitRun(input: { command: CreateRunCommand; commandHash: string; runId: string; eventId: string }): Promise<RunView> {
     return this.db.transaction(async (tx) => {
