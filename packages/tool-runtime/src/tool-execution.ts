@@ -83,6 +83,7 @@ export interface ToolExecutionStore {
     error: unknown;
     retryable: boolean;
   }): Promise<void>;
+  reconcileReplay?(request: ToolExecutionRequest, output: unknown): Promise<void>;
 }
 
 export interface ToolExecutionDependencies {
@@ -140,7 +141,10 @@ export class ToolExecutionService {
         actorId: request.context.actorId,
         input: request.input,
       });
-      if (reservation.kind === 'REPLAY') return { output: reservation.output, replayed: true };
+      if (reservation.kind === 'REPLAY') {
+        await durable.reconcileReplay?.(request, reservation.output);
+        return { output: reservation.output, replayed: true };
+      }
       if (reservation.kind === 'CONFLICT') {
         if (reservation.state === 'IN_PROGRESS') throw new IdempotencyInProgressError(request.idempotencyKey);
         if (reservation.state === 'FAILED_FINAL') throw new IdempotencyFinalFailureError(request.idempotencyKey);
