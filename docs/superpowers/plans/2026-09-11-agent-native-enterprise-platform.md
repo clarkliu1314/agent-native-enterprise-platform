@@ -1,6 +1,6 @@
 # Agent-native Enterprise Platform Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a durable, enterprise-grade Agent-native runtime whose application contract is independent of AgentScope, LangGraph, Eino, and Mastra.
 
@@ -102,6 +102,8 @@
 - [ ] Verify each fixture fails before recovery logic exists.
 - [ ] Implement deterministic recovery using persisted state and idempotency records.
 - [ ] Verify no duplicate business effect is produced.
+
+**Production follow-up:** [Issue #2](https://github.com/clarkliu1314/agent-native-enterprise-platform/issues/2) tracks the remaining production-grade worker/candidate-discovery work: durable candidate discovery, atomic lease/claim with `SKIP LOCKED`, expired-lease reclaim, retry/backoff and terminal classification, crash-safe worker restart, and structured recovery outcomes. This is intentionally tracked separately so the current recovery proof does not get mistaken for production worker completeness.
 
 ### Task 6: Four framework adapters
 
