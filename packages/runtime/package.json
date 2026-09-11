@@ -1,0 +1,14 @@
+{
+  "name": "@agent-native/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/in-memory-runtime.ts",
+  "types": "./src/in-memory-runtime.ts",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agent-native/runtime-contract": "workspace:*"
+  }
+}

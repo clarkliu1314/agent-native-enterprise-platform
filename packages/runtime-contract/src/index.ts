@@ -44,6 +44,8 @@ export interface ToolCall {
 
 export interface RunSnapshot {
   runId: string;
+  agentId: string;
+  input: unknown;
   state: RunState;
   version: number;
   turns: Turn[];

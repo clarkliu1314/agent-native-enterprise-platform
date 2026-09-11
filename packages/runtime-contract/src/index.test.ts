@@ -20,6 +20,8 @@ describe('runtime contract', () => {
   it('defines a recoverable snapshot boundary', () => {
     const snapshot: RunSnapshot = {
       runId: 'run-1',
+      agentId: 'investment-agent',
+      input: { task: 'screen' },
       state: RunState.WAITING,
       version: 3,
       turns: [],
@@ -28,6 +30,7 @@ describe('runtime contract', () => {
 
     expect(snapshot.version).toBe(3);
     expect(snapshot.state).toBe(RunState.WAITING);
+    expect(snapshot.agentId).toBe('investment-agent');
   });
 
   it('defines a framework-neutral tool call contract', () => {
