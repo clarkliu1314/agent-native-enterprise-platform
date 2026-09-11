@@ -19,34 +19,29 @@ describe('PostgresOutboxRepository', () => {
 
   afterAll(async () => pool.end());
 
-  it('atomically claims an available event with a worker lease', async () => {
+  async function seed(key: string, companyId: string) {
+    await store.reserve({ idempotencyKey: key, tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: key } });
     await store.commit({
-      idempotencyKey: 'repo-claim',
-      toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1',
-      output: { companyId: 'company-1' },
-      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'repo-claim', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' } },
+      idempotencyKey: key, toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId },
+      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: key, toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId } },
     });
+  }
+
+  it('atomically claims an available event with a worker lease', async () => {
+    await seed('repo-claim', 'company-1');
     const claimed = await repository.claim(1, 'worker-a');
     expect(claimed).toHaveLength(1);
     expect(claimed[0]).toMatchObject({ eventType: 'tool.execution.completed' });
   });
 
   it('rejects acknowledgement from a worker that does not own the lease', async () => {
-    await store.commit({
-      idempotencyKey: 'repo-owner', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1',
-      output: { companyId: 'company-2' },
-      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'repo-owner', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-2' } },
-    });
+    await seed('repo-owner', 'company-2');
     const [claimed] = await repository.claim(1, 'worker-a');
     await expect(repository.markPublished(claimed!.eventId, 'worker-b')).rejects.toThrow(/lease/i);
   });
 
   it('reclaims an expired lease and increments attempts', async () => {
-    await store.commit({
-      idempotencyKey: 'repo-expired', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1',
-      output: { companyId: 'company-3' },
-      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'repo-expired', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-3' } },
-    });
+    await seed('repo-expired', 'company-3');
     const [first] = await repository.claim(1, 'worker-a');
     await pool.query("UPDATE outbox_events SET locked_at = NOW() - INTERVAL '10 minutes' WHERE event_id = $1", [first!.eventId]);
     const [second] = await repository.claim(1, 'worker-b');
@@ -56,11 +51,7 @@ describe('PostgresOutboxRepository', () => {
   });
 
   it('uses exponential retry backoff and dead-letters after the configured limit', async () => {
-    await store.commit({
-      idempotencyKey: 'repo-retry', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1',
-      output: { companyId: 'company-4' },
-      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'repo-retry', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-4' } },
-    });
+    await seed('repo-retry', 'company-4');
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const [claimed] = await repository.claim(1, 'worker-a');
       await repository.release(claimed!.eventId, 'worker-a', new Error(`failure-${attempt}`));
