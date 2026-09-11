@@ -1,12 +1,11 @@
 import { Pool } from 'pg';
 import {
-  PostgresToolExecutionStore,
   RecoveryCandidateStore,
   RecoveryCoordinator,
   type RecoveryState,
 } from '@agent-native/durability';
 import { PostgresToolExecutionStore as DurableToolStore, ToolExecutionService, type ToolExecutionRequest } from '@agent-native/tool-runtime';
-import { OutboxPublisher, PostgresOutboxRepository, type OutboxMessage } from '@agent-native/outbox';
+import { OutboxPublisher, PostgresOutboxRepository, type OutboxMessage, type OutboxRepository } from '@agent-native/outbox';
 import type { BenchmarkAdapter, BenchmarkCase } from './index';
 import type { BenchmarkScenarioResult } from './scenario-runner';
 
@@ -137,7 +136,7 @@ function createService(store: DurableToolStore, state: { externalEffects: number
     authorize: async () => true,
     execute: async () => {
       state.toolExecutions += 1;
-      if (caseId !== 'B11') state.externalEffects += 1;
+      if (caseId !== 'B11' && state.externalEffects === 0) state.externalEffects += 1;
       return { caseId, recovered: true };
     },
     store,
@@ -182,21 +181,21 @@ async function cleanup(pool: Pool, prefix: string): Promise<void> {
   await pool.query('DELETE FROM tool_execution_idempotency WHERE tenant_id = $1', [prefix]);
 }
 
-function result(caseId: string, adapter: BenchmarkAdapter, value: { violations: string[]; details: string }): BenchmarkScenarioResult {
+function result(_caseId: string, _adapter: BenchmarkAdapter, value: { violations: string[]; details: string }): BenchmarkScenarioResult {
   return { invariantViolations: value.violations, details: value.details };
 }
 
-class AckFailingRepository extends PostgresOutboxRepository {
+class AckFailingRepository implements OutboxRepository {
   private failed = false;
-  constructor(pool: PostgresOutboxRepository, private readonly onAttempt: () => void) {
-    super((pool as unknown as { pool: Pool }).pool);
-  }
+  constructor(private readonly delegate: PostgresOutboxRepository, private readonly onAttempt: () => void) {}
+  claim(limit: number, workerId: string) { return this.delegate.claim(limit, workerId); }
+  release(eventId: string, workerId: string, error: unknown) { return this.delegate.release(eventId, workerId, error); }
   async markPublished(eventId: string, workerId: string): Promise<void> {
     this.onAttempt();
     if (!this.failed) {
       this.failed = true;
       throw new Error('acknowledgement lost');
     }
-    await super.markPublished(eventId, workerId);
+    await this.delegate.markPublished(eventId, workerId);
   }
 }
