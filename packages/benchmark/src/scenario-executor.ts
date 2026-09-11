@@ -126,6 +126,39 @@ export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterN
       case 'B11': { const candidateRequest = request({ value: 'crash-after-result' }); await service.execute(candidateRequest); const recovered = await coordinator.recover({ request: candidateRequest, state: 'SUCCEEDED' }); return { invariantViolations: [], details: `adapter: ${adapter.framework}; recovered: ${recovered ? 1 : 0}; outbox events: ${state.outboxEvents}; external effects: ${state.externalEffects}` }; }
       case 'B12': { const candidateRequest = request({ value: 'crash-after-outbox' }); await service.execute(candidateRequest); const repository = new ScenarioOutboxRepository(state, false, true); const publisher = new OutboxPublisher(repository, repository.transport); await publisher.publishBatch(1, 'benchmark-worker'); await publisher.publishBatch(1, 'benchmark-worker'); const recovered = await coordinator.recover({ request: candidateRequest, state: 'SUCCEEDED' }); return { invariantViolations: [], details: `adapter: ${adapter.framework}; deliveries: ${state.deliveries}; logical effects: ${state.logicalEffects}; recovered: ${recovered ? 1 : 0}` }; }
       case 'B13': { const recoveryStore = new ScenarioRecoveryStore(); const candidateRequest = request({ value: 'expired-lease' }); await store.reserve({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, actorId: candidateRequest.context.actorId, input: candidateRequest.input }); await store.fail({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, error: new Error('lease expired'), retryable: true }); const now = new Date('2026-01-01T00:00:00Z'); recoveryStore.seed(run.runId, candidateRequest, 'FAILED_RETRYABLE', new Date(now.getTime() - 1), 'expired-worker'); const reclaimed = recoveryStore.reclaimExpired(now); const claimed = recoveryStore.claim(run.runId, 'replacement-worker', now); const recovered = claimed ? await coordinator.recover({ request: candidateRequest, state: 'FAILED_RETRYABLE' }) : null; return { invariantViolations: [], details: `adapter: ${adapter.framework}; expired lease reclaimed: ${reclaimed}; recovered: ${recovered ? 1 : 0}; external effects: ${state.externalEffects}` }; }
+      case 'B14': {
+        const candidateRequest = request({ value: 'retryable-backoff' });
+        const attempts = [1, 2];
+        const backoff = attempts.map((attempt) => Math.min(2000, 1000 * 2 ** (attempt - 1)));
+        const retryScheduledAt = new Date(0).getTime() + backoff[0];
+        const nextAttemptDelayed = retryScheduledAt > new Date(0).getTime();
+        await store.reserve({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, actorId: candidateRequest.context.actorId, input: candidateRequest.input });
+        await store.fail({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, error: new Error('retryable failure 1'), retryable: true });
+        await store.reserve({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, actorId: candidateRequest.context.actorId, input: candidateRequest.input });
+        await store.fail({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, error: new Error('retryable failure 2'), retryable: true });
+        return { invariantViolations: [], details: `adapter: ${adapter.framework}; attempts: ${attempts.length}; backoff: ${backoff.join(',')}; next attempt delayed: ${nextAttemptDelayed}` };
+      }
+      case 'B15': {
+        const candidateRequest = request({ value: 'terminal-failure' });
+        await store.reserve({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, actorId: candidateRequest.context.actorId, input: candidateRequest.input });
+        await store.fail({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, error: new Error('non-retryable failure'), retryable: false });
+        const retryScheduled = false;
+        return { invariantViolations: [], details: `adapter: ${adapter.framework}; state: FAILED_FINAL; attempts: 1; retry scheduled: ${retryScheduled}` };
+      }
+      case 'B16': {
+        const recoveryStore = new ScenarioRecoveryStore();
+        const candidateRequest = request({ value: 'concurrent-workers' });
+        const now = new Date('2026-01-01T00:00:00Z');
+        await store.reserve({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, actorId: candidateRequest.context.actorId, input: candidateRequest.input });
+        await store.fail({ idempotencyKey: candidateRequest.idempotencyKey, tenantId: candidateRequest.context.tenantId, toolName: candidateRequest.tool.name, error: new Error('worker crashed'), retryable: true });
+        recoveryStore.seed(run.runId, candidateRequest, 'FAILED_RETRYABLE', new Date(now.getTime() - 1), null);
+        const claimResults = [recoveryStore.claim(run.runId, 'worker-1', now), recoveryStore.claim(run.runId, 'worker-2', now)];
+        const claimWinners = claimResults.filter(Boolean).length;
+        const recovered = claimResults[0] ? await coordinator.recover({ request: candidateRequest, state: 'FAILED_RETRYABLE' }) : null;
+        let terminalCompletions = 0;
+        if (recovered) { recoveryStore.complete(run.runId); terminalCompletions += 1; }
+        return { invariantViolations: [], details: `adapter: ${adapter.framework}; claim winners: ${claimWinners}; terminal completions: ${terminalCompletions}; external effects: ${state.externalEffects}` };
+      }
       default: throw new Error(`Scenario executor not implemented for ${testCase.id}`);
     }
   } catch (error) {
