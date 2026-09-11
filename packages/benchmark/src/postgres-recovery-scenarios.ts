@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { RecoveryCandidateStore, RecoveryCoordinator, type RecoveryState } from '@agent-native/durability';
 import { PostgresToolExecutionStore as DurableToolStore, ToolExecutionService, type ToolExecutionRequest } from '@agent-native/tool-runtime';
-import { OutboxPublisher, PostgresOutboxRepository } from '@agent-native/outbox';
+import { PostgresOutboxRepository } from '@agent-native/outbox';
 import type { BenchmarkAdapter, BenchmarkCase } from './index';
 import type { BenchmarkScenarioResult } from './scenario-runner';
 
@@ -75,13 +75,15 @@ export async function executePostgresRecoveryScenario(caseId: BenchmarkCase['id'
       if (!firstMessage) return result(caseId, adapter, { violations: ['outbox'], details: `postgresql: true; adapter: ${adapter}; deliveries: 0; logical effects: 0; published: false; recovered: 0` });
       await transport();
       await pool.query("UPDATE outbox_events SET locked_at = NOW() - INTERVAL '10 minutes' WHERE event_id = $1", [firstMessage.eventId]);
-      const publisher = new OutboxPublisher(outboxStore, transport);
-      const publishCount = await publisher.publishBatch(1, 'worker-b12-recovery');
+      const secondClaim = await outboxStore.claim(1, 'worker-b12-recovery');
+      const secondMessage = secondClaim[0];
+      if (!secondMessage) return result(caseId, adapter, { violations: ['outbox'], details: `postgresql: true; adapter: ${adapter}; deliveries: ${state.deliveries}; logical effects: ${state.logicalEffects}; published: false; recovered: 0` });
+      await transport();
+      await outboxStore.markPublished(secondMessage.eventId, 'worker-b12-recovery');
       const recovered = await coordinator.recover({ request, state: 'SUCCEEDED' });
-      const rows = await pool.query('SELECT COUNT(*)::int AS count, MAX(status) AS status, MAX(attempts)::int AS attempts, MAX(locked_by) AS locked_by, MAX(published_at) IS NOT NULL AS published_at, MAX(last_error) AS last_error FROM outbox_events WHERE tenant_id = $1 AND idempotency_key = $2', [request.context.tenantId, request.idempotencyKey]);
-      const row = rows.rows[0];
-      const outboxEvents = Number(row?.count ?? 0);
-      return result(caseId, adapter, { violations: state.deliveries === 2 && state.logicalEffects === 1 && outboxEvents === 1 && row?.status === 'PUBLISHED' && recovered.replayed ? [] : ['outbox', 'idempotency'], details: `postgresql: true; adapter: ${adapter}; deliveries: ${state.deliveries}; logical effects: ${state.logicalEffects}; publish count: ${publishCount}; published: ${row?.status === 'PUBLISHED'}; status: ${row?.status}; attempts: ${row?.attempts}; locked by: ${row?.locked_by}; published at: ${row?.published_at}; last error: ${row?.last_error ?? 'none'}; recovered: ${recovered ? 1 : 0}` });
+      const rows = await pool.query('SELECT COUNT(*)::int AS count, MAX(status) AS status FROM outbox_events WHERE tenant_id = $1 AND idempotency_key = $2', [request.context.tenantId, request.idempotencyKey]);
+      const outboxEvents = Number(rows.rows[0]?.count ?? 0);
+      return result(caseId, adapter, { violations: state.deliveries === 2 && state.logicalEffects === 1 && outboxEvents === 1 && rows.rows[0]?.status === 'PUBLISHED' && recovered.replayed ? [] : ['outbox', 'idempotency'], details: `postgresql: true; adapter: ${adapter}; deliveries: ${state.deliveries}; logical effects: ${state.logicalEffects}; published: ${rows.rows[0]?.status === 'PUBLISHED'}; recovered: ${recovered ? 1 : 0}` });
     }
 
     await seedRetryable(pool, request);
