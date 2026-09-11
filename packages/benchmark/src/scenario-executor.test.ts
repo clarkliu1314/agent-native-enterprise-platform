@@ -4,117 +4,21 @@ import { executeBenchmarkScenario } from './scenario-executor';
 
 describe('benchmark scenario executor', () => {
   it.each(benchmarkAdapters)('executes B01 through the %s adapter against the tool runtime', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[0], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('external effects: 1');
+    const result = await executeBenchmarkScenario(benchmarkCases[0], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('external effects: 1');
   });
-
-  it.each(benchmarkAdapters)('enforces permission denial for B02 through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[1], adapter);
-    expect(result.invariantViolations).toEqual([]);
-  });
-
-  it.each(benchmarkAdapters)('enforces tenant scope denial for B03 through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[2], adapter);
-    expect(result.invariantViolations).toEqual([]);
-  });
-
-  it.each(benchmarkAdapters)('replays a duplicate idempotency request for B04 through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[3], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('replayed: true');
-    expect(result.details).toContain('external effects: 1');
-  });
-
-  it.each(benchmarkAdapters)('rejects conflicting idempotency reuse for B05 through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[4], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('conflict rejected');
-  });
-
-  it.each(benchmarkAdapters)('commits the effect and publication intent atomically for B06 through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[5], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('external effects: 1');
-    expect(result.details).toContain('outbox events: 1');
-  });
-
-  it.each(benchmarkAdapters)('retries an unpublished outbox message for B07 through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[6], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('publish attempts: 2');
-    expect(result.details).toContain('published: 1');
-  });
-
-  it.each(benchmarkAdapters)('tolerates duplicate outbox delivery for B08 through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[7], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('deliveries: 2');
-    expect(result.details).toContain('logical effects: 1');
-  });
-
-  it.each(benchmarkAdapters)('recovers a claimed operation after B09 worker crash through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[8], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('recovered: 1');
-    expect(result.details).toContain('external effects: 1');
-  });
-
-  it.each(benchmarkAdapters)('deduplicates B10 crash-during-tool recovery through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[9], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('recovered: 1');
-    expect(result.details).toContain('external effects: 1');
-    expect(result.details).toContain('tool executions: 1');
-  });
-
-  it.each(benchmarkAdapters)('preserves the publication intent for B11 crash-after-result through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[10], adapter);
-
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('recovered: 1');
-    expect(result.details).toContain('outbox events: 1');
-    expect(result.details).toContain('external effects: 0');
-  });
-
-  it.each(benchmarkAdapters)('does not duplicate the logical effect for B12 crash-after-outbox through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[11], adapter);
-
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('deliveries: 2');
-    expect(result.details).toContain('logical effects: 1');
-    expect(result.details).toContain('recovered: 1');
-  });
-
-  it.each(benchmarkAdapters)('reclaims an expired recovery lease in B13 through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[12], adapter);
-
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('expired lease reclaimed: true');
-    expect(result.details).toContain('recovered: 1');
-    expect(result.details).toContain('external effects: 1');
-  });
-
-  it.each(benchmarkAdapters)('applies deterministic bounded backoff for B14 through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[13], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('attempts: 2');
-    expect(result.details).toContain('backoff: 1000,2000');
-    expect(result.details).toContain('next attempt delayed: true');
-  });
-
-  it.each(benchmarkAdapters)('stops B15 terminal failures without scheduling another retry through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[14], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('state: FAILED_FINAL');
-    expect(result.details).toContain('retry scheduled: false');
-  });
-
-  it.each(benchmarkAdapters)('allows only one winner for B16 concurrent recovery through the %s adapter', async (adapter) => {
-    const result = await executeBenchmarkScenario(benchmarkCases[15], adapter);
-    expect(result.invariantViolations).toEqual([]);
-    expect(result.details).toContain('claim winners: 1');
-    expect(result.details).toContain('terminal completions: 1');
-    expect(result.details).toContain('external effects: 1');
-  });
+  it.each(benchmarkAdapters)('enforces permission denial for B02 through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[1], adapter); expect(result.invariantViolations).toEqual([]); });
+  it.each(benchmarkAdapters)('enforces tenant scope denial for B03 through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[2], adapter); expect(result.invariantViolations).toEqual([]); });
+  it.each(benchmarkAdapters)('replays a duplicate idempotency request for B04 through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[3], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('replayed: true'); expect(result.details).toContain('external effects: 1'); });
+  it.each(benchmarkAdapters)('rejects conflicting idempotency reuse for B05 through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[4], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('conflict rejected'); });
+  it.each(benchmarkAdapters)('commits the effect and publication intent atomically for B06 through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[5], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('external effects: 1'); expect(result.details).toContain('outbox events: 1'); });
+  it.each(benchmarkAdapters)('retries an unpublished outbox message for B07 through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[6], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('publish attempts: 2'); expect(result.details).toContain('published: 1'); });
+  it.each(benchmarkAdapters)('tolerates duplicate outbox delivery for B08 through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[7], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('deliveries: 2'); expect(result.details).toContain('logical effects: 1'); });
+  it.each(benchmarkAdapters)('recovers a claimed operation after B09 worker crash through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[8], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('recovered: 1'); expect(result.details).toContain('external effects: 1'); });
+  it.each(benchmarkAdapters)('deduplicates B10 crash-during-tool recovery through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[9], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('recovered: 1'); expect(result.details).toContain('external effects: 1'); expect(result.details).toContain('tool executions: 1'); });
+  it.each(benchmarkAdapters)('preserves the publication intent for B11 crash-after-result through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[10], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('recovered: 1'); expect(result.details).toContain('outbox events: 1'); expect(result.details).toContain('external effects: 0'); });
+  it.each(benchmarkAdapters)('does not duplicate the logical effect for B12 crash-after-outbox through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[11], adapter); expect(result.invariantViolations, result.details).toEqual([]); expect(result.details).toContain('deliveries: 2'); expect(result.details).toContain('logical effects: 1'); expect(result.details).toContain('recovered: 1'); });
+  it.each(benchmarkAdapters)('reclaims an expired recovery lease in B13 through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[12], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('expired lease reclaimed: true'); expect(result.details).toContain('recovered: 1'); expect(result.details).toContain('external effects: 1'); });
+  it.each(benchmarkAdapters)('applies deterministic bounded backoff for B14 through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[13], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('attempts: 2'); expect(result.details).toContain('backoff: 1000,2000'); expect(result.details).toContain('next attempt delayed: true'); });
+  it.each(benchmarkAdapters)('stops B15 terminal failures without scheduling another retry through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[14], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('state: FAILED_FINAL'); expect(result.details).toContain('retry scheduled: false'); });
+  it.each(benchmarkAdapters)('allows only one winner for B16 concurrent recovery through the %s adapter', async (adapter) => { const result = await executeBenchmarkScenario(benchmarkCases[15], adapter); expect(result.invariantViolations).toEqual([]); expect(result.details).toContain('claim winners: 1'); expect(result.details).toContain('terminal completions: 1'); expect(result.details).toContain('external effects: 1'); });
 });
