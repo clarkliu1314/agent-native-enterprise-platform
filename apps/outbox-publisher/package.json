@@ -7,6 +7,9 @@
   "types": "./src/index.ts",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit" },
-  "dependencies": { "@agent-native/runtime": "workspace:*" },
+  "dependencies": {
+    "@agent-native/runtime": "workspace:*",
+    "@agent-native/queue": "workspace:*"
+  },
   "devDependencies": { "vitest": "^3.2.4" }
 }
