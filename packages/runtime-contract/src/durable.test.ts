@@ -16,7 +16,7 @@ describe('durable runtime contract', () => {
       'FAILED',
       'CANCELLED',
     ];
-    expect(new Set(states)).toHaveSize(6);
+    expect(new Set(states).size).toBe(6);
   });
 
   it('defines transactional create-run admission inputs', () => {
