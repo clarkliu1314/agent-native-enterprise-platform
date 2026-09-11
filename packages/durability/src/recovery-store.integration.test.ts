@@ -17,7 +17,7 @@ describe('RecoveryCandidateStore PostgreSQL contract', () => {
 
   beforeAll(() => store.migrate());
   beforeEach(async () => {
-    await pool.query('TRUNCATE TABLE agent_runs');
+    await pool.query('DELETE FROM agent_runs WHERE run_id = $1', ['recovery-1']);
     await pool.query(
       `INSERT INTO agent_runs (run_id, agent_id, state, input, version, metadata, recovery_state, recovery_attempts, next_attempt_at)
        VALUES ('recovery-1', 'investment-agent', 'RUNNING', '{}', 0, $1::jsonb, 'IN_PROGRESS', 0, $2)`,
