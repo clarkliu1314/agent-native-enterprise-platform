@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InMemoryAgentRuntime } from '@agent-native/runtime';
+import { InMemoryAgentRuntime } from '../../packages/runtime/src';
 import { createAgentScopeAdapter } from '../../packages/adapters/agentscope/src';
 import { createLangGraphAdapter } from '../../packages/adapters/langgraph/src';
 import { createEinoAdapter } from '../../packages/adapters/eino/src';
