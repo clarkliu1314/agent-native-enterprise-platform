@@ -26,9 +26,14 @@ describe('PostgresToolExecutionStore', () => {
   });
 
   it('reconciles a succeeded result whose outbox event was missing after a crash', async () => {
-    const request = { idempotencyKey: 'state-reconcile', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme' } };
-    await store.reserve(request);
-    await store.commit({ idempotencyKey: request.idempotencyKey, toolName: request.toolName, tenantId: request.tenantId, actorId: request.actorId, output: { companyId: 'company-reconcile' }, outboxEvent: { type: 'tool.execution.completed', idempotencyKey: request.idempotencyKey, toolName: request.toolName, tenantId: request.tenantId, actorId: request.actorId, output: { companyId: 'company-reconcile' } } });
+    const request = {
+      tool: { name: 'crm.create_company', description: 'create company', sideEffect: true },
+      input: { name: 'Acme' },
+      context: { actorId: 'user-1', tenantId: 'fund-1', permissions: ['crm:write'] },
+      idempotencyKey: 'state-reconcile',
+    };
+    await store.reserve({ idempotencyKey: request.idempotencyKey, tenantId: request.context.tenantId, toolName: request.tool.name, actorId: request.context.actorId, input: request.input });
+    await store.commit({ idempotencyKey: request.idempotencyKey, toolName: request.tool.name, tenantId: request.context.tenantId, actorId: request.context.actorId, output: { companyId: 'company-reconcile' }, outboxEvent: { type: 'tool.execution.completed', idempotencyKey: request.idempotencyKey, toolName: request.tool.name, tenantId: request.context.tenantId, actorId: request.context.actorId, output: { companyId: 'company-reconcile' } } });
     await pool.query('DELETE FROM outbox_events WHERE idempotency_key = $1', [request.idempotencyKey]);
 
     const service = new ToolExecutionService({
@@ -37,7 +42,7 @@ describe('PostgresToolExecutionStore', () => {
       store,
     });
     const result = await service.execute(request);
-    const rows = await pool.query('SELECT event_id, event_type, payload FROM outbox_events WHERE tenant_id = $1 AND idempotency_key = $2', [request.tenantId, request.idempotencyKey]);
+    const rows = await pool.query('SELECT event_id, event_type, payload FROM outbox_events WHERE tenant_id = $1 AND idempotency_key = $2', [request.context.tenantId, request.idempotencyKey]);
 
     expect(result).toEqual({ output: { companyId: 'company-reconcile' }, replayed: true });
     expect(rows.rows).toHaveLength(1);
