@@ -20,6 +20,7 @@
 - Side-effecting tools require external idempotency or durable reconciliation/wait.
 - Event + Outbox insertion is one PostgreSQL transaction and event sequence is monotonic per Run.
 - API requests are stateless; sync execution is bounded and may fall back to durable async continuation.
+- Redis Streams provide delivery/scheduling only; correctness remains in PostgreSQL fencing, lifecycle, and outbox state.
 - Every production behavior is introduced TDD-first: RED, minimal GREEN, then focused verification.
 
 ## File Map
@@ -45,6 +46,7 @@
 - Create `apps/recovery/src/index.ts`: recovery composition root.
 - Create `apps/outbox-publisher/src/index.ts`: outbox publisher composition root.
 - Create `packages/queue`: Redis Streams implementation of the framework-neutral `QueuePublisher`/`QueueConsumer` ports.
+- Create `packages/queue/src/index.test.ts`: Redis command-boundary tests with an injectable fake client.
 - Create `apps/*/package.json` and minimal build/typecheck configuration where required by the workspace.
 - Extend `docker-compose.yml` only after the real runtime process contracts exist.
 - Modify this plan and the main plan at each completed implementation gate.
@@ -52,7 +54,7 @@
 ## Progress Notes
 
 - Run #343 is verified green: repository typecheck, API typecheck/build, deployment boundary, 64/64 benchmark hard gate, full 173-test suite, and Compose smoke all passed.
-- Run #354 is verified green across both CI jobs; its test job passed repository typecheck, API typecheck/build, deployment boundary, benchmark hard gate, and full test suite, while Compose smoke passed benchmark, worker, and migration assertions.
+- Run #354 is verified green across both CI jobs; its test job passed repository typecheck, API typecheck/build, deployment boundary, benchmark hard gate, and full test suite, while Compose smoke passed benchmark, worker, and migration assertions. Its executed HEAD was `af44a90`, so it does not validate later commits.
 - Lifecycle transition + Event + Outbox is now represented by one repository transaction through `transitionRunAndEmit`; RuntimeFacade lifecycle commands use that atomic primitive.
 - Added a regression test proving lifecycle state is rolled back when Event/Outbox persistence fails.
 - Bounded execution deadline handling now treats `TimeoutError`/`AbortError` as a durable continuation boundary and returns the current Run instead of converting request expiry into an API 500.
@@ -63,7 +65,10 @@
 - Recovery now serializes reclaimed ownership as `{ runId, owner, fencingToken }` on the internal `agent.run` queue contract; Worker can execute an already-reclaimed RUNNING row through an internal fenced execution boundary without violating the six-state FSM.
 - Added focused recovery/worker tests for reclaimed fencing handoff and ordinary queue execution.
 - Added `@agent-native/queue` with Redis Streams publisher/consumer implementations using consumer groups, acknowledgements, and pending-entry reclamation; Worker, Recovery, and Outbox composition roots now expose Redis-backed constructors.
-- The latest implementation commits are awaiting a new GitHub Actions run; no new green claim is made beyond Run #354.
+- Added an injectable Redis command-client boundary and publisher tests covering lazy connection, JSON serialization, topic stream naming, and idempotent close.
+- Added `workflow_dispatch` to CI so the workflow has an explicit manual trigger contract.
+- The GitHub connector currently exposes no workflow-dispatch action; commits created through the connector have not produced a new PR run, so the latest queue changes remain unverified by Actions.
+- Latest implementation commits in this slice: `36b130e`, `403f748`, `e264f95`, `353ff56`.
 
 ## Task 1: Repository and transaction primitives
 
@@ -105,6 +110,8 @@
 - [x] Implement publisher with transactional claim, delivery, retry scheduling, and published marking.
 - [x] Implement Worker composition root using `RuntimeFacade`, queue delivery, bounded execution, and fenced lease heartbeat.
 - [x] Add Redis Streams publisher/consumer composition wiring for durable queue delivery.
+- [x] Add Redis publisher command-boundary tests with dependency injection.
+- [ ] Verify Redis-backed duplicate delivery and pending-message recovery tests.
 - [ ] Verify worker restart and duplicate-delivery tests.
 - [ ] Commit `feat(runtime): add worker and outbox composition roots`.
 
@@ -130,6 +137,7 @@
 - [ ] Add E2E tests covering API → PostgreSQL Run/Event/Outbox → Publisher → Worker → terminal Run.
 - [ ] Add recovery E2E covering worker crash/lease expiry → recovery reclaim → new fencing token → continuation.
 - [ ] Add sync deadline E2E proving the request boundary does not become the durable execution boundary.
+- [ ] Add Redis Streams integration coverage for consumer-group ACK and pending-message reclamation.
 - [ ] Update the main implementation plan and design docs with completed tasks, commits, and CI run numbers.
 - [ ] Run repository typecheck, full tests, API build, benchmark hard gate, and Compose smoke.
 - [ ] Commit `docs(runtime): close durable composition implementation gate`.
