@@ -35,6 +35,7 @@
 - Create `packages/runtime/src/model-execution-service.ts`: durable Model Call intent/attempt/result boundary.
 - Create `packages/runtime/src/checkpoint-service.ts`: runtime envelope persistence with opaque adapter payload.
 - Create `packages/runtime/src/durable-worker.ts`: RuntimeFacade-driven queue consumption and bounded execution slice.
+- Create `packages/runtime/src/lease-heartbeat.ts`: fenced lease renewal while a bounded execution slice is active.
 - Create `packages/runtime/src/index.ts`: public runtime package exports.
 - Create `packages/runtime/src/*.test.ts`: focused unit/contract tests for each service.
 - Modify `packages/runtime-contract/src/durable.ts`: add exact framework-neutral result/error/port contracts only when tests require them.
@@ -53,14 +54,18 @@
 - Lifecycle transition + Event + Outbox is now represented by one repository transaction through `transitionRunAndEmit`; RuntimeFacade lifecycle commands use that atomic primitive.
 - Added a regression test proving lifecycle state is rolled back when Event/Outbox persistence fails.
 - Bounded execution deadline handling now treats `TimeoutError`/`AbortError` as a durable continuation boundary and returns the current Run instead of converting request expiry into an API 500.
-- Added a facade-driven `DurableWorker` queue contract and tests; process-root wiring, lease heartbeat, Recovery, and Publisher integration remain subsequent gates.
+- Added a facade-driven `DurableWorker` queue contract and tests.
+- Added a reusable fenced lease-heartbeat primitive; bounded runtime execution now renews the PostgreSQL lease with the claimed fencing token and aborts execution if the ownership check is lost.
+- Added Worker, Recovery, and Outbox Publisher composition-root packages that construct PostgreSQL-backed runtime infrastructure outside the Vercel request boundary.
+- Added a regression API test locking sync-deadline -> 202 behavior.
+- The latest implementation commits are awaiting a new GitHub Actions run; no new green claim is made beyond Run #343.
 
 ## Task 1: Repository and transaction primitives
 
 - [ ] Write RED tests for atomic Run admission, idempotency replay/conflict, per-Run event sequencing, and fencing-token claim.
 - [ ] Verify the tests fail because no PostgreSQL repository implementation exists.
-- [ ] Implement repository ports and SQL transaction helpers with parameterized queries.
-- [ ] Implement atomic `createRun`, `claimRun`, `renewLease`, and fenced durable-write primitives.
+- [x] Implement repository ports and SQL transaction helpers with parameterized queries.
+- [x] Implement atomic `createRun`, `claimRun`, `renewLease`, and fenced durable-write primitives.
 - [ ] Add integration tests using the existing Compose PostgreSQL service; assert rollback leaves no Run/Event/Outbox/Idempotency residue.
 - [ ] Commit `feat(runtime): add transactional durable repositories`.
 
@@ -76,39 +81,39 @@
 ## Task 3: Tool and Model durable execution steps
 
 - [ ] Write RED tests for permission-before-effect, side-effecting idempotency, lost-fence result rejection, Model Call intent/result persistence, and replay policy.
-- [ ] Implement `ToolExecutionService` using two transactions around external execution; never hold a DB transaction over the external call.
-- [ ] Implement `ModelExecutionService` with logical call identity, request hash, provider attempts, and reconciliation/replay policy.
+- [x] Implement `ToolExecutionService` using two transactions around external execution; never hold a DB transaction over the external call.
+- [x] Implement `ModelExecutionService` with logical call identity, request hash, provider attempts, and reconciliation/replay policy.
 - [ ] Verify crash-point tests prove no duplicate logical side effect and no stale-worker durable write.
 - [ ] Commit `feat(runtime): add durable tool and model execution services`.
 
 ## Task 4: Checkpoints and recovery
 
 - [ ] Write RED tests for opaque checkpoint envelope persistence, expired-lease reclaim, new fencing token, REPLAYABLE retry, NON_REPLAYABLE durable wait, and deterministic recovery outcome.
-- [ ] Implement checkpoint service and recovery coordinator using `FOR UPDATE SKIP LOCKED`.
-- [ ] Ensure recovery does not mutate Run state through an unapproved transition and never reuses an old fencing token.
+- [x] Implement checkpoint service and recovery coordinator using `FOR UPDATE SKIP LOCKED`.
+- [x] Ensure recovery does not mutate Run state through an unapproved transition and never reuses an old fencing token.
 - [ ] Verify crash/recovery tests and repository invariants.
 - [ ] Commit `feat(runtime): implement checkpoint and recovery coordination`.
 
 ## Task 5: Outbox publisher and Worker
 
 - [ ] Write RED tests for outbox claim, publish success, retry/backoff, duplicate delivery, and worker lease/heartbeat behavior.
-- [ ] Implement publisher with transactional claim, delivery, retry scheduling, and published marking.
-- [ ] Implement Worker composition root using `RuntimeFacade`, queue delivery, claim/lease, heartbeat, and fencing-aware execution.
+- [x] Implement publisher with transactional claim, delivery, retry scheduling, and published marking.
+- [x] Implement Worker composition root using `RuntimeFacade`, queue delivery, bounded execution, and fenced lease heartbeat.
 - [ ] Verify worker restart and duplicate-delivery tests.
 - [ ] Commit `feat(runtime): add worker and outbox composition roots`.
 
 ## Task 6: Vercel-compatible API composition
 
 - [ ] Write RED API tests for POST `/runs` async 202, sync terminal 200, sync deadline 202, idempotent replay, conflict 409, and GET durable state.
-- [ ] Implement `apps/api/src/composition.ts` so the handler receives injected `RuntimeFacade` and does not instantiate repositories/adapters inside request logic.
-- [ ] Update `apps/api/src/handler.ts` to use only the facade and preserve deployment-boundary guarantees.
-- [ ] Verify API typecheck/build and focused handler/deployment tests.
+- [x] Implement `apps/api/src/composition.ts` so the handler receives injected `RuntimeFacade` and does not instantiate repositories/adapters inside request logic.
+- [x] Update `apps/api/src/handler.ts` to expose the durable handler without moving durable execution into the request boundary.
+- [ ] Verify API typecheck/build and focused handler/deployment tests on the new composition changes.
 - [ ] Commit `feat(api): wire stateless request boundary to durable runtime`.
 
 ## Task 7: Recovery and Outbox process roots
 
 - [ ] Write RED process-contract tests proving API, Worker, Recovery, and Outbox Publisher use separate composition roots while sharing the same Runtime implementation.
-- [ ] Implement minimal Node entrypoints and environment validation for Worker, Recovery, and Publisher.
+- [x] Implement minimal composition roots for Worker, Recovery, and Publisher with explicit dependency injection.
 - [ ] Add Compose services only for the real durable processes; keep the Vercel API stateless.
 - [ ] Verify Compose health, startup ordering, worker consumption, recovery fallback, and publisher retry.
 - [ ] Commit `feat(runtime): add durable process composition roots`.
