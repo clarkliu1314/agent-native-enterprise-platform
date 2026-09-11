@@ -35,7 +35,11 @@ describe('PostgresToolExecutionStore', () => {
     });
 
     const reloadedStore = new PostgresToolExecutionStore(pool);
-    expect(await reloadedStore.get('pg-idem-1')).toEqual({ companyId: 'company-1' });
+    expect(await reloadedStore.get({
+      idempotencyKey: 'pg-idem-1',
+      tenantId: 'fund-1',
+      toolName: 'crm.create_company',
+    })).toEqual({ companyId: 'company-1' });
   });
 
   it('commits exactly one idempotency row and one outbox event for repeated commits', async () => {
@@ -86,8 +90,8 @@ describe('PostgresToolExecutionStore', () => {
       },
     });
 
-    // A raw key lookup is intentionally being replaced by a scoped lookup in the
-    // implementation. This test prevents cross-tenant replay/data disclosure.
+    // A scoped lookup is the only public read path: tenant + tool + key must all match.
+    // This prevents an idempotency token from becoming a cross-tenant data-disclosure key.
     expect(await store.get({
       idempotencyKey: 'pg-tenant-isolation',
       tenantId: 'fund-2',
