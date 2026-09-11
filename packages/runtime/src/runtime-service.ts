@@ -4,6 +4,7 @@ import { assertValidDurableTransition } from './state-machine';
 import { IdempotencyConflictError, RunNotFoundError } from './errors';
 import type { Clock, IdGenerator, RuntimeAdapter } from './ports';
 import type { DurableRepositories } from './repositories';
+import { createLeaseHeartbeat } from './lease-heartbeat';
 
 const canonicalize = (value: unknown): string => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -13,11 +14,27 @@ const canonicalize = (value: unknown): string => {
 export const hashCommand = (command: CreateRunCommand): string => createHash('sha256').update(canonicalize({ agentId: command.agentId, input: command.input, metadata: command.metadata ?? {}, executionMode: command.executionMode ?? 'async' })).digest('hex');
 const defaultClock: Clock = { now: () => new Date() };
 const defaultIds: IdGenerator = { next: (prefix) => `${prefix}_${randomUUID()}` };
-export interface RuntimeServiceOptions { leaseMs?: number; clock?: Clock; ids?: IdGenerator; adapter: RuntimeAdapter; }
+export interface RuntimeServiceOptions {
+  leaseMs?: number;
+  heartbeatMs?: number;
+  clock?: Clock;
+  ids?: IdGenerator;
+  adapter: RuntimeAdapter;
+}
 
 export class DurableRuntimeService implements RuntimeFacade {
-  private readonly leaseMs: number; private readonly clock: Clock; private readonly ids: IdGenerator; private readonly adapter: RuntimeAdapter;
-  constructor(private readonly repos: DurableRepositories, options: RuntimeServiceOptions) { this.leaseMs = options.leaseMs ?? 30_000; this.clock = options.clock ?? defaultClock; this.ids = options.ids ?? defaultIds; this.adapter = options.adapter; }
+  private readonly leaseMs: number;
+  private readonly heartbeatMs: number;
+  private readonly clock: Clock;
+  private readonly ids: IdGenerator;
+  private readonly adapter: RuntimeAdapter;
+  constructor(private readonly repos: DurableRepositories, options: RuntimeServiceOptions) {
+    this.leaseMs = options.leaseMs ?? 30_000;
+    this.heartbeatMs = options.heartbeatMs ?? Math.max(1_000, Math.floor(this.leaseMs / 3));
+    this.clock = options.clock ?? defaultClock;
+    this.ids = options.ids ?? defaultIds;
+    this.adapter = options.adapter;
+  }
   async createRun(command: CreateRunCommand) {
     const key = command.idempotencyKey; const commandHash = hashCommand(command);
     if (key) { const existing = await this.repos.getIdempotency(key); if (existing) { if (existing.commandHash !== commandHash) throw new IdempotencyConflictError(key); if (!existing.runId) throw new Error(`Incomplete idempotency record: ${key}`); return { run: await this.requireRun(existing.runId), replayed: true }; } }
@@ -36,6 +53,10 @@ export class DurableRuntimeService implements RuntimeFacade {
   }
   async executeRunBounded(runId: string, owner: string, deadlineAt: Date): Promise<ExecuteBoundedResult> {
     let run = await this.resumeRun(runId, owner); if (run.state !== 'RUNNING') return { run, terminal: true }; if (this.clock.now() >= deadlineAt) return { run, terminal: false };
+    const heartbeat = createLeaseHeartbeat(
+      ({ runId: claimedRunId, owner: claimedOwner, fencingToken, leaseMs }) => this.repos.renewLease(claimedRunId, claimedOwner, fencingToken, leaseMs),
+      { intervalMs: this.heartbeatMs },
+    ).start({ runId, owner, fencingToken: run.fencingToken, leaseMs: this.leaseMs });
     try {
       const result = await this.adapter.run({ run, signal: AbortSignal.timeout(Math.max(1, deadlineAt.getTime() - this.clock.now().getTime())) });
       const nextState = result.kind;
@@ -48,6 +69,8 @@ export class DurableRuntimeService implements RuntimeFacade {
         return { run: current, terminal: current.state === 'SUCCEEDED' || current.state === 'FAILED' || current.state === 'CANCELLED' };
       }
       throw error;
+    } finally {
+      heartbeat.stop();
     }
   }
   async getRun(runId: string): Promise<RunView> { return this.requireRun(runId); }
