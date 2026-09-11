@@ -52,7 +52,9 @@ describe('ToolExecutionService', () => {
     let reservations = 0;
     const store: ToolExecutionStore = {
       reserve: vi.fn(async (): Promise<IdempotencyReservation> => ++reservations === 1 ? { kind: 'RESERVED', state: 'IN_PROGRESS' } : { kind: 'RETRY', state: 'FAILED_RETRYABLE' }),
-      get: vi.fn(async () => null), commit: vi.fn(async () => undefined), fail: vi.fn(async () => undefined),
+      get: vi.fn(async () => null),
+      commit: vi.fn(async (): Promise<void> => undefined),
+      fail: vi.fn(async (): Promise<void> => undefined),
     };
     const execute = vi.fn().mockResolvedValue({ companyId: 'company-c1' });
     const service = new ToolExecutionService({ authorize: async () => true, execute, store });
@@ -72,7 +74,7 @@ describe('ToolExecutionService', () => {
       if (existing) return existing;
       const result = { companyId: 'company-c2' }; downstreamResults.set(request.idempotencyKey, result); return result;
     });
-    const store: ToolExecutionStore = { reserve: vi.fn().mockResolvedValueOnce({ kind: 'RESERVED', state: 'IN_PROGRESS' }).mockResolvedValueOnce({ kind: 'RETRY', state: 'FAILED_RETRYABLE' }), get: vi.fn(async () => null), commit: vi.fn(async () => undefined), fail: vi.fn(async () => undefined) };
+    const store: ToolExecutionStore = { reserve: vi.fn().mockResolvedValueOnce({ kind: 'RESERVED', state: 'IN_PROGRESS' }).mockResolvedValueOnce({ kind: 'RETRY', state: 'FAILED_RETRYABLE' }), get: vi.fn().mockResolvedValue(null), commit: vi.fn(async (): Promise<void> => undefined), fail: vi.fn(async (): Promise<void> => undefined) };
     const service = new ToolExecutionService({ authorize: async () => true, execute, store });
     const request = { tool, input: { name: 'Acme Capital' }, context, idempotencyKey: 'idem-c2' };
     const firstExternalResult = await execute(request);
@@ -85,7 +87,7 @@ describe('ToolExecutionService', () => {
 
   it('C3: a committed result is replayed without invoking the external effect', async () => {
     const execute = vi.fn().mockResolvedValue({ companyId: 'company-c3' });
-    const store: ToolExecutionStore = { reserve: vi.fn().mockResolvedValue({ kind: 'REPLAY', state: 'SUCCEEDED', output: { companyId: 'company-c3' } }), get: vi.fn().mockResolvedValue({ companyId: 'company-c3' }), commit: vi.fn(), fail: vi.fn() };
+    const store: ToolExecutionStore = { reserve: vi.fn().mockResolvedValue({ kind: 'REPLAY', state: 'SUCCEEDED', output: { companyId: 'company-c3' } }), get: vi.fn().mockResolvedValue({ companyId: 'company-c3' }), commit: vi.fn(async (): Promise<void> => undefined), fail: vi.fn(async (): Promise<void> => undefined) };
     const service = new ToolExecutionService({ authorize: async () => true, execute, store });
     const result = await service.execute({ tool, input: { name: 'Acme Capital' }, context, idempotencyKey: 'idem-c3' });
     expect(result).toEqual({ output: { companyId: 'company-c3' }, replayed: true });
@@ -94,7 +96,7 @@ describe('ToolExecutionService', () => {
   });
 
   it('rejects an active reservation instead of stealing it', async () => {
-    const store: ToolExecutionStore = { reserve: vi.fn().mockResolvedValue({ kind: 'CONFLICT', state: 'IN_PROGRESS' }), get: vi.fn(async () => null), commit: vi.fn(async () => undefined), fail: vi.fn(async () => undefined) };
+    const store: ToolExecutionStore = { reserve: vi.fn().mockResolvedValue({ kind: 'CONFLICT', state: 'IN_PROGRESS' }), get: vi.fn().mockResolvedValue(null), commit: vi.fn(async (): Promise<void> => undefined), fail: vi.fn(async (): Promise<void> => undefined) };
     const execute = vi.fn();
     const service = new ToolExecutionService({ authorize: async () => true, execute, store });
     await expect(service.execute({ tool, input: { name: 'Acme Capital' }, context, idempotencyKey: 'idem-active' })).rejects.toBeInstanceOf(IdempotencyInProgressError);
