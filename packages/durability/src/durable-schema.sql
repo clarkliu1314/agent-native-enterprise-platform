@@ -17,8 +17,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   finished_at TIMESTAMPTZ
 );
 
-CREATE INDEX IF NOT EXISTS agent_runs_recovery_idx
-  ON agent_runs (state, lease_expires_at, created_at);
+CREATE INDEX IF NOT EXISTS agent_runs_recovery_idx ON agent_runs (state, lease_expires_at, created_at);
 
 CREATE TABLE IF NOT EXISTS agent_turns (
   turn_id TEXT PRIMARY KEY,
@@ -70,9 +69,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at TIMESTAMPTZ
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS tool_calls_idempotency_idx
-  ON tool_calls (run_id, idempotency_key);
+CREATE UNIQUE INDEX IF NOT EXISTS tool_calls_idempotency_idx ON tool_calls (run_id, idempotency_key);
 
 CREATE TABLE IF NOT EXISTS agent_events (
   event_id TEXT PRIMARY KEY,
@@ -90,13 +87,14 @@ CREATE TABLE IF NOT EXISTS outbox_events (
   topic TEXT NOT NULL,
   payload JSONB NOT NULL,
   published_at TIMESTAMPTZ,
+  claimed_by TEXT,
+  claimed_at TIMESTAMPTZ,
   attempts INTEGER NOT NULL DEFAULT 0,
   next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE INDEX IF NOT EXISTS outbox_publish_idx
-  ON outbox_events (published_at, next_attempt_at, created_at);
+CREATE INDEX IF NOT EXISTS outbox_publish_idx ON outbox_events (published_at, next_attempt_at, created_at);
+CREATE INDEX IF NOT EXISTS outbox_claim_idx ON outbox_events (claimed_at, published_at, next_attempt_at);
 
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   idempotency_key TEXT PRIMARY KEY,
