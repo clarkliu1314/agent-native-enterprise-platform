@@ -16,6 +16,6 @@ describe('local Docker Compose environment', () => {
     expect(compose).toContain('DATABASE_URL: postgres://postgres:postgres@postgres:5432/agent_native');
     expect(compose).toContain('REDIS_URL: redis://redis:6379');
     expect(compose).toContain('./infra/compose/migrate.sql:/docker-entrypoint-initdb.d/001-migrate.sql:ro');
-    expect(compose).toContain('pnpm test -- packages/benchmark/src');
+    expect(compose).toContain('command: ["pnpm", "test", "--", "packages/benchmark/src"]');
   });
 });
