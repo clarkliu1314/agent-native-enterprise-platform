@@ -116,4 +116,31 @@ describe('benchmark scenario executor', () => {
     expect(result.details).toContain('recovered: 1');
     expect(result.details).toContain('external effects: 1');
   });
+
+  it.each(benchmarkAdapters)('applies deterministic bounded backoff for B14 through the %s adapter', async (adapter) => {
+    const result = await executeBenchmarkScenario(benchmarkCases[13], adapter);
+
+    expect(result.invariantViolations).toEqual([]);
+    expect(result.details).toContain('attempts: 2');
+    expect(result.details).toContain('backoff: 1000,2000');
+    expect(result.details).toContain('next attempt delayed: true');
+  });
+
+  it.each(benchmarkAdapters)('stops B15 terminal failures without scheduling another retry through the %s adapter', async (adapter) => {
+    const result = await executeBenchmarkScenario(benchmarkCases[14], adapter);
+
+    expect(result.invariantViolations).toEqual([]);
+    expect(result.details).toContain('state: FAILED_FINAL');
+    expect(result.details).toContain('attempts: 1');
+    expect(result.details).toContain('retry scheduled: false');
+  });
+
+  it.each(benchmarkAdapters)('allows only one winner for B16 concurrent recovery through the %s adapter', async (adapter) => {
+    const result = await executeBenchmarkScenario(benchmarkCases[15], adapter);
+
+    expect(result.invariantViolations).toEqual([]);
+    expect(result.details).toContain('claim winners: 1');
+    expect(result.details).toContain('terminal completions: 1');
+    expect(result.details).toContain('external effects: 1');
+  });
 });
