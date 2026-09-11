@@ -53,12 +53,18 @@ export class DurableRuntimeService implements RuntimeFacade {
   }
   async executeRunBounded(runId: string, owner: string, deadlineAt: Date): Promise<ExecuteBoundedResult> {
     let run = await this.resumeRun(runId, owner); if (run.state !== 'RUNNING') return { run, terminal: true }; if (this.clock.now() >= deadlineAt) return { run, terminal: false };
+    const executionController = new AbortController();
+    const timeoutMs = Math.max(1, deadlineAt.getTime() - this.clock.now().getTime());
+    const timeout = setTimeout(() => executionController.abort(new DOMException('Execution deadline exceeded', 'TimeoutError')), timeoutMs);
+    timeout.unref?.();
     const heartbeat = createLeaseHeartbeat(
       ({ runId: claimedRunId, owner: claimedOwner, fencingToken, leaseMs }) => this.repos.renewLease(claimedRunId, claimedOwner, fencingToken, leaseMs),
       { intervalMs: this.heartbeatMs },
-    ).start({ runId, owner, fencingToken: run.fencingToken, leaseMs: this.leaseMs });
+    ).start({ runId, owner, fencingToken: run.fencingToken, leaseMs: this.leaseMs }, () => {
+      executionController.abort(new DOMException('Run lease lost', 'AbortError'));
+    });
     try {
-      const result = await this.adapter.run({ run, signal: AbortSignal.timeout(Math.max(1, deadlineAt.getTime() - this.clock.now().getTime())) });
+      const result = await this.adapter.run({ run, signal: executionController.signal });
       const nextState = result.kind;
       assertValidDurableTransition('RUNNING', nextState);
       run = await this.repos.transitionRunAndEmit({ runId, owner, fencingToken: run.fencingToken, from: 'RUNNING', to: nextState, error: result.error, eventType: `RUN_${result.kind}`, eventPayload: { output: result.output, error: result.error }, topic: 'agent.run' });
@@ -71,6 +77,7 @@ export class DurableRuntimeService implements RuntimeFacade {
       throw error;
     } finally {
       heartbeat.stop();
+      clearTimeout(timeout);
     }
   }
   async getRun(runId: string): Promise<RunView> { return this.requireRun(runId); }
