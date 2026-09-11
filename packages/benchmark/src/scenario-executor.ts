@@ -18,6 +18,7 @@ import type { BenchmarkScenarioResult } from './scenario-runner';
 interface ScenarioState {
   toolExecutions: number;
   externalEffects: number;
+  externalEffectApplied: boolean;
   outboxEvents: number;
   atomicCommits: number;
   publishAttempts: number;
@@ -67,7 +68,10 @@ class ScenarioStore implements ToolExecutionStore {
     record.status = 'SUCCEEDED';
     record.output = commit.output;
     this.state.toolExecutions += 1;
-    this.state.externalEffects += 1;
+    if (!this.state.externalEffectApplied) {
+      this.state.externalEffects += 1;
+      this.state.externalEffectApplied = true;
+    }
     this.state.outboxEvents += 1;
     this.state.atomicCommits += 1;
   }
@@ -157,15 +161,16 @@ export async function executeBenchmarkScenario(testCase: BenchmarkCase, adapterN
   const run = await adapter.startRun({ agentId: `benchmark-${testCase.id}`, input: { caseId: testCase.id } });
   await adapter.executeTurn(run.runId, { step: testCase.steps[0] });
 
-  const state: ScenarioState = { toolExecutions: 0, externalEffects: 0, outboxEvents: 0, atomicCommits: 0, publishAttempts: 0, published: 0, acknowledgementsBeforeTransport: 0, deliveries: 0, logicalEffects: 0 };
+  const state: ScenarioState = { toolExecutions: 0, externalEffects: 0, externalEffectApplied: false, outboxEvents: 0, atomicCommits: 0, publishAttempts: 0, published: 0, acknowledgementsBeforeTransport: 0, deliveries: 0, logicalEffects: 0 };
   const store = new ScenarioStore(state);
   let toolExecutionCount = 0;
   const service = new ToolExecutionService({
     authorize: async () => testCase.id !== 'B02' && testCase.id !== 'B03',
-    execute: async (request) => {
+    execute: async () => {
       toolExecutionCount += 1;
       if (testCase.id === 'B10' && toolExecutionCount === 1) {
         state.externalEffects += 1;
+        state.externalEffectApplied = true;
         throw new Error('worker crashed after external effect');
       }
       return { caseId: testCase.id, adapter: adapter.framework, ok: true };
