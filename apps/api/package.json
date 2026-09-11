@@ -7,7 +7,8 @@
   "types": "./src/handler.ts",
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit"
   },
   "dependencies": {
     "@agent-native/deployment-boundary": "workspace:*",
