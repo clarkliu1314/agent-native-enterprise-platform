@@ -4,6 +4,12 @@ import type { QueueConsumer, QueuePublisher } from '@agent-native/runtime';
 const DEFAULT_PREFIX = 'agent-native:queue:';
 type RedisClient = ReturnType<typeof createClient>;
 
+export interface RedisCommandClient {
+  connect(): Promise<void>;
+  quit(): Promise<unknown>;
+  sendCommand(command: string[]): Promise<unknown>;
+}
+
 export interface RedisStreamQueueOptions {
   url: string;
   prefix?: string;
@@ -13,12 +19,15 @@ export interface RedisStreamQueueOptions {
 }
 
 export class RedisStreamPublisher implements QueuePublisher {
-  private readonly client: RedisClient;
+  private readonly client: RedisCommandClient;
   private connected = false;
   private readonly prefix: string;
 
-  constructor(private readonly options: RedisStreamQueueOptions) {
-    this.client = createClient({ url: options.url });
+  constructor(
+    private readonly options: RedisStreamQueueOptions,
+    client: RedisCommandClient = createClient({ url: options.url }),
+  ) {
+    this.client = client;
     this.prefix = options.prefix ?? DEFAULT_PREFIX;
   }
 
@@ -47,15 +56,18 @@ export class RedisStreamPublisher implements QueuePublisher {
 }
 
 export class RedisStreamConsumer implements QueueConsumer {
-  private readonly client: RedisClient;
+  private readonly client: RedisCommandClient;
   private connected = false;
   private readonly prefix: string;
   private readonly group: string;
   private readonly consumer: string;
   private readonly blockMs: number;
 
-  constructor(private readonly options: RedisStreamQueueOptions) {
-    this.client = createClient({ url: options.url });
+  constructor(
+    private readonly options: RedisStreamQueueOptions,
+    client: RedisCommandClient = createClient({ url: options.url }),
+  ) {
+    this.client = client;
     this.prefix = options.prefix ?? DEFAULT_PREFIX;
     this.group = options.group ?? 'runtime-workers';
     this.consumer = options.consumer ?? `consumer-${process.pid}`;
