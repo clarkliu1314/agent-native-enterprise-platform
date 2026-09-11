@@ -4,7 +4,7 @@ WORKDIR /workspace
 
 RUN npm install --global pnpm@10.15.0
 
-COPY package.json pnpm-workspace.yaml tsconfig.json ./
+COPY package.json pnpm-workspace.yaml tsconfig.json docker-compose.yml ./
 COPY apps ./apps
 COPY packages ./packages
 COPY tests ./tests
