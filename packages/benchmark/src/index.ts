@@ -4,6 +4,12 @@ export type BenchmarkAdapter = (typeof benchmarkAdapters)[number];
 export const benchmarkInvariants = ['permission', 'idempotency', 'outbox'] as const;
 export type BenchmarkInvariant = (typeof benchmarkInvariants)[number];
 
+export const benchmarkCaseIds = [
+  'B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07', 'B08',
+  'B09', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16',
+] as const;
+export type BenchmarkCaseId = (typeof benchmarkCaseIds)[number];
+
 export interface BenchmarkInitialState {
   runState: string;
   recoveryState: string;
@@ -18,7 +24,7 @@ export interface BenchmarkMock {
 }
 
 export interface BenchmarkCase {
-  id: `B${string}`;
+  id: BenchmarkCaseId;
   fixture: string;
   initialState: BenchmarkInitialState;
   mock: BenchmarkMock;
