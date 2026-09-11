@@ -69,9 +69,13 @@
 - [ ] Emit deterministic machine-readable benchmark results and CI artifacts.
 
 ### Task 8: Local Docker Compose environment
-- [ ] Bring up PostgreSQL, Redis, API, worker, web, mock LLM/tools, and benchmark runner.
-- [ ] Add health checks and deterministic seed data.
-- [ ] Add a single smoke-test command.
+
+**Status:** In progress — PostgreSQL, Redis, deterministic migration/seed, worker smoke service, benchmark smoke service, Compose health/dependency gates, and CI Compose validation are implemented. The repository intentionally does not yet contain API, web, or mock-LLM applications, so Compose does not fabricate those services; their deployment boundaries remain later work.
+
+- [x] Bring up the currently implemented local infrastructure: PostgreSQL, Redis, migration, worker smoke service, and benchmark runner.
+- [x] Add health checks and deterministic seed data.
+- [x] Add a single CI-style smoke-test sequence using `docker compose up --build -d`, `docker compose wait benchmark`, and an explicit benchmark exit-code assertion.
+- [ ] Add real API/web/mock-LLM services when those application boundaries are implemented.
 
 ### Task 9: Vercel deployment boundary
 - [ ] Keep durable worker/database operations outside request-lifetime assumptions.
