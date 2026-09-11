@@ -6,7 +6,7 @@
 
 **Architecture:** The platform core owns Agent Run state, turns, tool execution, permissions, idempotency, outbox, event log, checkpointing, recovery, and cancellation. Frameworks are adapters behind a stable Runtime Contract. PostgreSQL is the durable system of record, Redis/queue handles asynchronous delivery, and Vercel hosts the web/API edge while the durable worker remains independently deployable.
 
-**Tech Stack:** TypeScript, pnpm workspaces, Vitest, PostgreSQL, Redis, Next.js, Node.js workers, Docker Compose. Adapter packages will be added incrementally for AgentScope, LangGraph, Eino, and Mastra.
+**Tech Stack:** TypeScript, pnpm workspaces, Vitest, PostgreSQL, Redis, Node.js workers, Docker Compose, Vercel-compatible Node request boundary. Adapter packages will be added incrementally for AgentScope, LangGraph, Eino, and Mastra.
 
 **Spec:** Project architecture and benchmark specification from the prior design conversation, including Tool Permission, Crash Recovery, Outbox + Idempotency, and the 16-case adapter benchmark.
 
@@ -70,17 +70,23 @@
 
 ### Task 8: Local Docker Compose environment
 
-**Status:** In progress — PostgreSQL, Redis, deterministic migration/seed, worker smoke service, benchmark smoke service, Compose health/dependency gates, and CI Compose validation are implemented. The repository intentionally does not yet contain API, web, or mock-LLM applications, so Compose does not fabricate those services; their deployment boundaries remain later work.
+**Status:** In progress — PostgreSQL, Redis, deterministic migration/seed, worker smoke service, benchmark smoke service, Compose health/dependency gates, and CI Compose validation are implemented. The repository intentionally does not fabricate a fake model provider or a durable API runtime. The Vercel request boundary is now documented separately; a runnable API service remains gated on a real durable runtime composition.
 
 - [x] Bring up the currently implemented local infrastructure: PostgreSQL, Redis, migration, worker smoke service, and benchmark runner.
 - [x] Add health checks and deterministic seed data.
 - [x] Add a single CI-style smoke-test sequence using `docker compose up --build -d`, `docker compose wait benchmark`, and an explicit benchmark exit-code assertion.
-- [ ] Add real API/web/mock-LLM services when those application boundaries are implemented.
+- [ ] Add a real API/web/mock-LLM service only when the corresponding application/runtime boundaries are implemented safely.
 
 ### Task 9: Vercel deployment boundary
-- [ ] Keep durable worker/database operations outside request-lifetime assumptions.
-- [ ] Route model calls through a provider-agnostic LLM gateway boundary.
-- [ ] Document environment variables, deployment topology, and failure semantics.
+
+**Status:** In progress — the request-boundary package, provider-neutral LLM gateway contract, stateless API handler, static worker-dependency safety test, deployment documentation, and API build contract are implemented. Run #184 passed against the prior boundary revision. A new CI verification is required for the explicit API typecheck/build steps before this task is closed.
+
+- [x] Keep durable worker/database operations outside request-lifetime assumptions.
+- [x] Route model calls through a provider-agnostic LLM gateway boundary.
+- [x] Document environment variables, deployment topology, and failure semantics.
+- [x] Add API typecheck/build commands and a build-contract test.
+- [ ] Verify the revised CI workflow with API typecheck/build passes.
+- [ ] Close Task 9 after focused tests, full tests, typecheck, API build, Compose validation, and CI all pass.
 
 ### Task 10: CI and verification
 - [ ] Run formatting, type checking, unit tests, integration tests, and benchmark contract tests.
