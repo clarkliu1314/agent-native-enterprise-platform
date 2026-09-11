@@ -58,13 +58,13 @@ jobs:
         run: docker compose logs --no-color benchmark worker migrate
       - name: Assert benchmark smoke test succeeded
         if: always()
-        run: test "$(docker inspect "$(docker compose ps -q benchmark)" --format '{{.State.ExitCode}}')" = "0"
+        run: test "$(docker inspect "$(docker compose ps -aq benchmark)" --format '{{.State.ExitCode}}')" = "0"
       - name: Assert worker smoke test succeeded
         if: always()
-        run: test "$(docker inspect "$(docker compose ps -q worker)" --format '{{.State.ExitCode}}')" = "0"
+        run: test "$(docker inspect "$(docker compose ps -aq worker)" --format '{{.State.ExitCode}}')" = "0"
       - name: Assert migration succeeded
         if: always()
-        run: test "$(docker inspect "$(docker compose ps -q migrate)" --format '{{.State.ExitCode}}')" = "0"
+        run: test "$(docker inspect "$(docker compose ps -aq migrate)" --format '{{.State.ExitCode}}')" = "0"
       - name: Show service status
         if: always()
         run: docker compose ps -a
