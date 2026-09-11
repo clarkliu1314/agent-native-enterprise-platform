@@ -10,6 +10,13 @@ Codex should treat this repository as an agent-maintained system with explicit c
 4. Inspect current tests and implementation before editing.
 5. For behavior changes, create the failing test first.
 
+## Repository-native Codex surfaces
+
+- `AGENTS.md` is the primary repository instruction contract.
+- `.agents/skills/*/SKILL.md` contains repository skills discovered by Codex.
+- `.codex/config.toml` is intentionally minimal and contains no unsupported command aliases.
+- A plugin is not required for local development: duplicating the repository skills into a plugin would create a second source of truth. Add a plugin only when a distributable/installable integration is needed.
+
 ## Specialized workflows
 
 - `repo-review`: whole-repository readiness and architecture review.
