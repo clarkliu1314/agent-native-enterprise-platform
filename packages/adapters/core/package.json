@@ -1,0 +1,17 @@
+{
+  "name": "@agent-native/adapter-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/adapter.ts",
+  "types": "./src/adapter.ts",
+  "exports": {
+    ".": "./src/adapter.ts"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@agent-native/runtime-contract": "workspace:*"
+  }
+}
