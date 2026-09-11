@@ -2,7 +2,6 @@ import { createClient } from 'redis';
 import type { QueueConsumer, QueuePublisher } from '@agent-native/runtime';
 
 const DEFAULT_PREFIX = 'agent-native:queue:';
-type RedisClient = ReturnType<typeof createClient>;
 
 export interface RedisCommandClient {
   connect(): Promise<void>;
