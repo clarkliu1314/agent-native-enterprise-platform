@@ -38,11 +38,17 @@ export class PostgresToolExecutionStore implements ToolExecutionStore {
         payload JSONB NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         published_at TIMESTAMPTZ NULL,
+        status TEXT NOT NULL DEFAULT 'PENDING',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        locked_at TIMESTAMPTZ NULL,
+        locked_by TEXT NULL,
+        last_error TEXT NULL,
         UNIQUE (tenant_id, idempotency_key)
       )
     `);
 
-    // Upgrade databases created by the earlier store implementation.
+    // Upgrade databases created by earlier store/outbox implementations.
     await this.pool.query(`ALTER TABLE tool_execution_idempotency ADD COLUMN IF NOT EXISTS input_hash TEXT NOT NULL DEFAULT ''`);
     await this.pool.query(`ALTER TABLE tool_execution_idempotency ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'SUCCEEDED'`);
     await this.pool.query(`ALTER TABLE tool_execution_idempotency ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ NULL`);
@@ -83,6 +89,22 @@ export class PostgresToolExecutionStore implements ToolExecutionStore {
             UNIQUE (tenant_id, idempotency_key);
         END IF;
       END $$;
+    `);
+    await this.pool.query(`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'PENDING'`);
+    await this.pool.query(`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0`);
+    await this.pool.query(`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
+    await this.pool.query(`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ NULL`);
+    await this.pool.query(`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS locked_by TEXT NULL`);
+    await this.pool.query(`ALTER TABLE outbox_events ADD COLUMN IF NOT EXISTS last_error TEXT NULL`);
+    await this.pool.query(`
+      UPDATE outbox_events
+         SET status = CASE WHEN published_at IS NULL THEN 'PENDING' ELSE 'PUBLISHED' END
+       WHERE status IS NULL OR status NOT IN ('PENDING', 'PUBLISHED', 'DEAD')
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS outbox_events_pending_idx
+        ON outbox_events (available_at, created_at)
+       WHERE published_at IS NULL AND status = 'PENDING'
     `);
   }
 
