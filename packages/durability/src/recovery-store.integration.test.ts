@@ -42,6 +42,18 @@ describe('RecoveryCandidateStore PostgreSQL contract', () => {
     expect(row.rows[0].recovery_owner).toMatch(/^worker-[ab]$/);
   });
 
+  it('renews an active lease only for its owner and token', async () => {
+    const lease = await store.claimRecoveryCandidate('recovery-1', 'worker-a', 'token-a', 30_000, now);
+    expect(lease).not.toBeNull();
+    const renewed = await store.renewRecoveryLease('recovery-1', 'worker-a', 'token-a', 60_000, new Date(now.getTime() + 10_000));
+    const rejected = await store.renewRecoveryLease('recovery-1', 'worker-b', 'token-a', 60_000, new Date(now.getTime() + 10_000));
+    const row = await pool.query('SELECT recovery_owner, recovery_lease_token, recovery_lease_expires_at FROM agent_runs WHERE run_id = $1', ['recovery-1']);
+    expect(renewed).toBe(true);
+    expect(rejected).toBe(false);
+    expect(row.rows[0]).toMatchObject({ recovery_owner: 'worker-a', recovery_lease_token: 'token-a' });
+    expect(new Date(row.rows[0].recovery_lease_expires_at).getTime()).toBe(now.getTime() + 70_000);
+  });
+
   it('reclaims an expired lease and allows a new owner to claim', async () => {
     const expired = new Date(now.getTime() - 1_000);
     await pool.query(
