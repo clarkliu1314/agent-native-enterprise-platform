@@ -12,13 +12,23 @@ export function createLeaseHeartbeat(
   options: { intervalMs: number } = { intervalMs: 10_000 },
 ) {
   return {
-    start(claim: LeaseHeartbeatClaim): LeaseHeartbeatHandle {
+    start(claim: LeaseHeartbeatClaim, onLost?: () => void): LeaseHeartbeatHandle {
       let stopped = false;
-      const tick = () => {
-        if (stopped) return;
-        void renew(claim).catch(() => undefined);
+      let lost = false;
+      const tick = async () => {
+        if (stopped || lost) return;
+        try {
+          const renewed = await renew(claim);
+          if (!renewed) {
+            lost = true;
+            onLost?.();
+          }
+        } catch {
+          // A transient heartbeat error does not immediately revoke ownership.
+          // PostgreSQL fencing remains authoritative on every durable write.
+        }
       };
-      const timer = setInterval(tick, Math.max(1, options.intervalMs));
+      const timer = setInterval(() => { void tick(); }, Math.max(1, options.intervalMs));
       timer.unref?.();
       return {
         stop() {
