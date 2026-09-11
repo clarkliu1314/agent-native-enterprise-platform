@@ -11,6 +11,7 @@ describe('PostgresRunStore', () => {
 
   beforeAll(async () => {
     await store.migrate();
+    await pool.query('TRUNCATE TABLE agent_runs');
   });
 
   afterAll(async () => {
