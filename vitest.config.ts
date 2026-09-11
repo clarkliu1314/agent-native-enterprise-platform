@@ -4,5 +4,7 @@ export default defineConfig({
   test: {
     globals: false,
     fileParallelism: false,
+    maxWorkers: 1,
+    minWorkers: 1,
   },
 });
