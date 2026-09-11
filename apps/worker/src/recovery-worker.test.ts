@@ -18,12 +18,12 @@ const lease: RecoveryLease = {
 
 function storeMock(): RecoveryCandidateStore {
   return {
-    findRecoverableCandidates: vi.fn().mockResolvedValue([{ runId: lease.runId }]),
+    findRecoverableCandidates: vi.fn().mockResolvedValue([{ runId: lease.runId, attempts: lease.attempts }]),
     claimRecoveryCandidate: vi.fn().mockResolvedValue(lease),
     renewRecoveryLease: vi.fn().mockResolvedValue(true),
     reclaimExpiredRecoveryCandidates: vi.fn().mockResolvedValue(0),
     completeRecovery: vi.fn().mockResolvedValue(true),
-    recordRecoveryFailure: vi.fn().mockResolvedValue('FAILED_RETRYABLE'),
+    recordRecoveryFailure: vi.fn().mockResolvedValue({ state: 'FAILED_RETRYABLE', attempts: 1, nextAttemptAt: new Date('2026-09-11T00:00:01.000Z') }),
     migrate: vi.fn().mockResolvedValue(undefined),
   } as unknown as RecoveryCandidateStore;
 }
@@ -40,9 +40,12 @@ describe('RecoveryWorker', () => {
     const coordinator = new RecoveryCoordinator(service);
     const worker = new RecoveryWorker(store, coordinator, 'worker-1');
 
-    const result = await worker.runOnce();
+    const result = await worker.runOnce(new Date('2026-09-11T00:00:00.000Z'));
 
-    expect(result).toEqual({ recovered: 1, skipped: 0, failed: 0 });
+    expect(result).toMatchObject({ recovered: 1, skipped: 0, failed: 0 });
+    expect(result.outcomes).toEqual([{
+      candidateId: 'run-1', attempt: 1, owner: 'worker-1', classification: 'SUCCEEDED', nextAttemptAt: null,
+    }]);
     expect(store.claimRecoveryCandidate).toHaveBeenCalledWith('run-1', 'worker-1', expect.any(String), expect.any(Number), expect.any(Date));
     expect(store.completeRecovery).toHaveBeenCalledWith('run-1', 'worker-1', 'token-1');
     expect(execute).toHaveBeenCalledWith(request);
@@ -54,21 +57,29 @@ describe('RecoveryWorker', () => {
     const coordinator = { recover: vi.fn() } as unknown as RecoveryCoordinator;
     const worker = new RecoveryWorker(store, coordinator, 'worker-2');
 
-    const result = await worker.runOnce();
+    const result = await worker.runOnce(new Date('2026-09-11T00:00:00.000Z'));
 
-    expect(result).toEqual({ recovered: 0, skipped: 1, failed: 0 });
+    expect(result).toMatchObject({ recovered: 0, skipped: 1, failed: 0 });
+    expect(result.outcomes).toEqual([{
+      candidateId: 'run-1', attempt: 1, owner: 'worker-2', classification: 'SKIPPED', nextAttemptAt: null,
+    }]);
     expect(coordinator.recover).not.toHaveBeenCalled();
   });
 
-  it('records retryable failures and continues the worker loop', async () => {
+  it('records retryable failures and emits the durable retry schedule', async () => {
     const store = storeMock();
     const error = new Error('temporary upstream failure');
+    const nextAttemptAt = new Date('2026-09-11T00:00:01.000Z');
+    vi.mocked(store.recordRecoveryFailure).mockResolvedValue({ state: 'FAILED_RETRYABLE', attempts: 1, nextAttemptAt });
     const coordinator = { recover: vi.fn().mockRejectedValue(error) } as unknown as RecoveryCoordinator;
     const worker = new RecoveryWorker(store, coordinator, 'worker-1');
 
-    const result = await worker.runOnce();
+    const result = await worker.runOnce(new Date('2026-09-11T00:00:00.000Z'));
 
-    expect(result).toEqual({ recovered: 0, skipped: 0, failed: 1 });
+    expect(result).toMatchObject({ recovered: 0, skipped: 0, failed: 1 });
+    expect(result.outcomes).toEqual([{
+      candidateId: 'run-1', attempt: 1, owner: 'worker-1', classification: 'FAILED_RETRYABLE', nextAttemptAt,
+    }]);
     expect(store.recordRecoveryFailure).toHaveBeenCalledWith(expect.objectContaining({ runId: 'run-1', owner: 'worker-1', leaseToken: 'token-1', retryable: true, error }));
   });
 });
