@@ -1,0 +1,179 @@
+import { createClient, type RedisClientType } from 'redis';
+import type { QueueConsumer, QueuePublisher } from '@agent-native/runtime';
+
+const DEFAULT_PREFIX = 'agent-native:queue:';
+
+export interface RedisStreamQueueOptions {
+  url: string;
+  prefix?: string;
+  group?: string;
+  consumer?: string;
+  blockMs?: number;
+}
+
+type RedisClient = RedisClientType;
+
+export class RedisStreamPublisher implements QueuePublisher {
+  private readonly client: RedisClient;
+  private connected = false;
+  private readonly prefix: string;
+
+  constructor(private readonly options: RedisStreamQueueOptions) {
+    this.client = createClient({ url: options.url });
+    this.prefix = options.prefix ?? DEFAULT_PREFIX;
+  }
+
+  async connect(): Promise<void> {
+    if (!this.connected) {
+      await this.client.connect();
+      this.connected = true;
+    }
+  }
+
+  async publish(topic: string, payload: unknown): Promise<void> {
+    await this.connect();
+    await this.client.sendCommand([
+      'XADD',
+      this.stream(topic),
+      '*',
+      'payload',
+      JSON.stringify(payload),
+    ]);
+  }
+
+  async close(): Promise<void> {
+    if (this.connected) {
+      await this.client.quit();
+      this.connected = false;
+    }
+  }
+
+  private stream(topic: string): string {
+    return `${this.prefix}${topic}`;
+  }
+}
+
+export class RedisStreamConsumer implements QueueConsumer {
+  private readonly client: RedisClient;
+  private connected = false;
+  private readonly prefix: string;
+  private readonly group: string;
+  private readonly consumer: string;
+  private readonly blockMs: number;
+
+  constructor(private readonly options: RedisStreamQueueOptions) {
+    this.client = createClient({ url: options.url });
+    this.prefix = options.prefix ?? DEFAULT_PREFIX;
+    this.group = options.group ?? 'runtime-workers';
+    this.consumer = options.consumer ?? `consumer-${process.pid}`;
+    this.blockMs = options.blockMs ?? 5_000;
+  }
+
+  async connect(): Promise<void> {
+    if (!this.connected) {
+      await this.client.connect();
+      this.connected = true;
+    }
+  }
+
+  async consume(handler: (message: { topic: string; payload: unknown }) => Promise<void>): Promise<void> {
+    await this.connect();
+    // Streams are created by publishers. The group is created lazily for each
+    // stream when the first message is observed, so startup has no race with API admission.
+    for (;;) {
+      const topics = await this.discoverStreams();
+      for (const stream of topics) {
+        await this.ensureGroup(stream);
+        const messages = await this.read(stream);
+        for (const message of messages) {
+          const topic = stream.slice(this.prefix.length);
+          try {
+            await handler({ topic, payload: JSON.parse(message.payload) });
+            await this.client.sendCommand(['XACK', stream, this.group, message.id]);
+          } catch {
+            // Leave the entry pending. A later consumer can claim it with XAUTOCLAIM.
+          }
+        }
+        await this.reclaimPending(stream, handler);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.connected) {
+      await this.client.quit();
+      this.connected = false;
+    }
+  }
+
+  private async discoverStreams(): Promise<string[]> {
+    const keys = await this.client.sendCommand(['SCAN', '0', 'MATCH', `${this.prefix}*`, 'COUNT', '100']) as [string, string[]];
+    return keys[1];
+  }
+
+  private async ensureGroup(stream: string): Promise<void> {
+    try {
+      await this.client.sendCommand(['XGROUP', 'CREATE', stream, this.group, '0', 'MKSTREAM']);
+    } catch (error) {
+      if (!String(error).includes('BUSYGROUP')) throw error;
+    }
+  }
+
+  private async read(stream: string): Promise<Array<{ id: string; payload: string }>> {
+    const result = await this.client.sendCommand([
+      'XREADGROUP', 'GROUP', this.group, this.consumer,
+      'COUNT', '10', 'BLOCK', String(this.blockMs), 'STREAMS', stream, '>',
+    ]) as unknown[] | null;
+    return parseStreamMessages(result);
+  }
+
+  private async reclaimPending(
+    stream: string,
+    handler: (message: { topic: string; payload: unknown }) => Promise<void>,
+  ): Promise<void> {
+    const result = await this.client.sendCommand([
+      'XAUTOCLAIM', stream, this.group, this.consumer, '60000', '0-0', 'COUNT', '10',
+    ]) as unknown[];
+    const entries = Array.isArray(result) && Array.isArray(result[1]) ? result[1] : [];
+    const topic = stream.slice(this.prefix.length);
+    for (const entry of entries) {
+      if (!Array.isArray(entry) || entry.length < 2 || !Array.isArray(entry[1])) continue;
+      const fields = entry[1] as unknown[];
+      const payloadIndex = fields.findIndex((value) => value === 'payload');
+      if (payloadIndex < 0 || typeof fields[payloadIndex + 1] !== 'string') continue;
+      const id = String(entry[0]);
+      try {
+        await handler({ topic, payload: JSON.parse(fields[payloadIndex + 1] as string) });
+        await this.client.sendCommand(['XACK', stream, this.group, id]);
+      } catch {
+        // Keep pending for the next claim cycle.
+      }
+    }
+  }
+
+  private stream(topic: string): string {
+    return `${this.prefix}${topic}`;
+  }
+}
+
+function parseStreamMessages(result: unknown[] | null): Array<{ id: string; payload: string }> {
+  if (!Array.isArray(result) || result.length === 0 || !Array.isArray(result[0])) return [];
+  const messages = result[0] as unknown[];
+  if (!Array.isArray(messages[1])) return [];
+  return (messages[1] as unknown[]).flatMap((entry) => {
+    if (!Array.isArray(entry) || entry.length < 2 || !Array.isArray(entry[1])) return [];
+    const fields = entry[1] as unknown[];
+    const payloadIndex = fields.findIndex((value) => value === 'payload');
+    if (payloadIndex < 0 || typeof fields[payloadIndex + 1] !== 'string') return [];
+    return [{ id: String(entry[0]), payload: fields[payloadIndex + 1] as string }];
+  });
+}
+
+export function createRedisPublisher(url = process.env.REDIS_URL ?? 'redis://localhost:6379'): RedisStreamPublisher {
+  return new RedisStreamPublisher({ url });
+}
+
+export function createRedisConsumer(url = process.env.REDIS_URL ?? 'redis://localhost:6379'): RedisStreamConsumer {
+  return new RedisStreamConsumer({ url });
+}
