@@ -32,17 +32,15 @@ describe('RecoveryCandidateStore PostgreSQL contract', () => {
     expect(candidates[0]?.request.idempotencyKey).toBe('idem-recovery-1');
   });
 
-  it('does not turn ordinary historical runs into recovery candidates during migration', async () => {
+  it('repairs an existing recovery column default so historical inserts remain non-recoverable', async () => {
+    await pool.query(`ALTER TABLE agent_runs ALTER COLUMN recovery_state SET DEFAULT 'IN_PROGRESS'`);
+    await store.migrate();
     await pool.query(`
       INSERT INTO agent_runs (run_id, agent_id, state, input, version, metadata)
-      VALUES ('recovery-historical', 'investment-agent', 'SUCCEEDED', '{}', 0, $1::jsonb)
-    `, [JSON.stringify({})]);
+      VALUES ('recovery-historical', 'investment-agent', 'SUCCEEDED', '{}', 0, '{}'::jsonb)
+    `);
 
-    await store.migrate();
-
-    const row = await pool.query(
-      `SELECT recovery_state FROM agent_runs WHERE run_id = 'recovery-historical'`,
-    );
+    const row = await pool.query(`SELECT recovery_state FROM agent_runs WHERE run_id = 'recovery-historical'`);
     expect(row.rows[0].recovery_state).toBe('NONE');
     expect((await store.findRecoverableCandidates(10, now)).map((candidate) => candidate.runId)).toEqual(['recovery-1']);
   });
