@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import { PostgresOutboxRepository } from './postgres-outbox-repository';
 import { migrateOutbox } from './migrate';
@@ -15,8 +15,9 @@ describe('PostgresOutboxRepository', () => {
   beforeAll(async () => {
     await store.migrate();
     await migrateOutbox(pool);
-    await cleanupTestRows();
   });
+
+  beforeEach(async () => cleanupTestRows());
 
   afterAll(async () => {
     await cleanupTestRows();
@@ -63,11 +64,8 @@ describe('PostgresOutboxRepository', () => {
     await seed('repo-c4', 'company-c4');
     const [first] = await repository.claim(1, 'worker-a');
     expect(first).toBeDefined();
-
-    // Broker publish succeeds, but the worker dies before markPublished().
     await pool.query("UPDATE outbox_events SET locked_at = NOW() - INTERVAL '10 minutes' WHERE event_id = $1", [first!.eventId]);
     const [redelivered] = await repository.claim(1, 'worker-b');
-
     expect(redelivered!.eventId).toBe(first!.eventId);
     expect(redelivered!.eventType).toBe('tool.execution.completed');
     const row = await pool.query('SELECT published_at, attempts, status FROM outbox_events WHERE event_id = $1', [first!.eventId]);
