@@ -61,21 +61,24 @@
 
 ### Task 7: 16-case benchmark
 
-**Status:** In progress — benchmark schema, all 16 data-driven cases, 64-case adapter matrix, and unified adapter execution contract are implemented. CI Run #149 passed. The remaining work is real scenario execution against permission/idempotency/outbox/recovery semantics and deterministic result artifacts.
+**Status:** In progress — all 16 benchmark definitions, the 64-case adapter matrix, the unified runner contract, and the first executable scenario slice B01-B08 are implemented. CI Run #203 passed after fixing the `@agent-native/outbox` workspace entrypoint packaging issue. The next slice is B09-B13 (crash/recovery/lease semantics), followed by B14-B16, deterministic 64-case result artifacts, and hard safety-invariant gates.
 
 - [x] Encode every benchmark with fixture, initial DB state, Mock LLM/Tool, exact steps, SQL assertions, expected result, and failure criteria.
 - [x] Execute the same matrix across all four adapters through one framework-neutral contract.
 - [ ] Replace the contract-only runner with real scenario execution and hard safety-invariant gates.
+- [x] Start real scenario execution with B01-B08 using the actual ToolExecutionService and OutboxPublisher against deterministic scenario stores.
+- [ ] Implement executable B09-B13 recovery/crash scenarios using the real RecoveryCoordinator and recovery-store semantics.
+- [ ] Implement executable B14-B16 retry/backoff, terminal-failure, and concurrent-worker scenarios.
 - [ ] Emit deterministic machine-readable benchmark results and CI artifacts.
 
 ### Task 8: Local Docker Compose environment
 
-**Status:** In progress — PostgreSQL, Redis, deterministic migration/seed, worker smoke service, benchmark smoke service, Compose health/dependency gates, and CI Compose validation are implemented. The repository intentionally does not fabricate a fake model provider or a durable API runtime. The Vercel request boundary is now documented separately; a runnable API service remains gated on a real durable runtime composition.
+**Status:** Complete for the current application boundary — PostgreSQL, Redis, deterministic migration/seed, worker smoke service, benchmark smoke service, Compose health/dependency gates, and CI Compose validation are implemented. The repository intentionally does not fabricate a fake model provider or a fake durable API runtime. The real request boundary is implemented under Task 9 and will be connected to a durable runtime composition when that runtime composition is available.
 
 - [x] Bring up the currently implemented local infrastructure: PostgreSQL, Redis, migration, worker smoke service, and benchmark runner.
 - [x] Add health checks and deterministic seed data.
 - [x] Add a single CI-style smoke-test sequence using `docker compose up --build -d`, `docker compose wait benchmark`, and an explicit benchmark exit-code assertion.
-- [ ] Add a real API/web/mock-LLM service only when the corresponding application/runtime boundaries are implemented safely.
+- [x] Keep fake API/web/mock-LLM services out of Compose until their corresponding production boundaries are implemented safely.
 
 ### Task 9: Vercel deployment boundary
 
@@ -90,9 +93,11 @@
 
 ### Task 10: CI and verification
 
-**Status:** In progress — CI now explicitly verifies repository typecheck, API typecheck/build, deployment-boundary tests, full tests, and Compose smoke. Remaining work is benchmark result artifact publication and final merge-gate hardening.
+**Status:** In progress — CI explicitly verifies repository typecheck, API typecheck/build, deployment-boundary tests, full tests, and Compose smoke. Run #203 is green. A new workspace packaging contract test is now in place, and missing root `exports` metadata was hardened for tool-runtime/API/worker; the new packaging verification is awaiting its CI result. Remaining work is executable B09-B16 coverage, benchmark artifact publication, and final merge-gate hardening.
 
 - [x] Run type checking, unit/integration tests, and deployment-boundary contract tests in CI.
+- [x] Add a workspace packaging contract covering stable `main`/`types`/root `exports` and workspace dependency exportability.
+- [ ] Verify the workspace packaging contract in CI after the entrypoint hardening changes.
 - [ ] Add/verify formatting checks if the repository adopts a formatter contract.
 - [ ] Require all benchmark safety contracts before merge.
 - [ ] Publish deterministic benchmark artifacts.
