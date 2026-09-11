@@ -54,14 +54,16 @@ export async function executePostgresTailScenario(
       });
       const firstDelay = firstFailure.nextAttemptAt.getTime() - firstNow.getTime();
       const secondDelay = secondFailure.nextAttemptAt.getTime() - secondNow.getTime();
-      const candidate = (await recoveryStore.findRecoverableCandidates(10, secondNow)).find((entry) => entry.runId === runId);
+      const beforeDue = await recoveryStore.findRecoverableCandidates(10, secondNow);
+      const afterDue = await recoveryStore.findRecoverableCandidates(10, new Date(secondFailure.nextAttemptAt.getTime() + 1));
       const valid = firstFailure.state === 'FAILED_RETRYABLE'
         && secondFailure.state === 'FAILED_RETRYABLE'
         && firstFailure.attempts === 1
         && secondFailure.attempts === 2
         && firstDelay === 1_000
         && secondDelay === 2_000
-        && !!candidate;
+        && !beforeDue.some((entry) => entry.runId === runId)
+        && afterDue.some((entry) => entry.runId === runId);
       return result(caseId, adapter, valid ? [] : ['idempotency'], `postgresql: true; adapter: ${adapter}; attempts: ${secondFailure.attempts}; backoff: ${firstDelay},${secondDelay}; next attempt delayed: ${secondFailure.nextAttemptAt > secondNow}`);
     }
 
