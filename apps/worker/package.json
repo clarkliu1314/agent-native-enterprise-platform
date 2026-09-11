@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./src/recovery-worker.ts",
   "types": "./src/recovery-worker.ts",
+  "exports": {
+    ".": "./src/recovery-worker.ts"
+  },
   "scripts": {
     "test": "vitest run"
   },
