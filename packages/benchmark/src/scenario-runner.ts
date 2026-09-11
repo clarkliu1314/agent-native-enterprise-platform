@@ -9,7 +9,7 @@ import {
   type BenchmarkRunner,
 } from './index';
 
-export { benchmarkCases };
+export { benchmarkAdapters, benchmarkCases };
 
 export interface BenchmarkScenarioResult {
   invariantViolations: readonly string[];
@@ -35,6 +35,16 @@ export function createBenchmarkRunner(execute: BenchmarkScenarioExecutor): Bench
         invariantViolations: violations,
         details: scenario.details,
       };
+    },
+
+    async runAll(): Promise<BenchmarkRunResult[]> {
+      const results: BenchmarkRunResult[] = [];
+      for (const testCase of benchmarkCases) {
+        for (const adapter of benchmarkAdapters) {
+          results.push(await this.run(testCase, adapter));
+        }
+      }
+      return results;
     },
   };
 }
