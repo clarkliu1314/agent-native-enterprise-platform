@@ -1,0 +1,6 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# Repository instructions live in AGENTS.md.
+# Repository skills are auto-discovered from .agents/skills.
+# Keep this file intentionally minimal so unsupported local aliases do not become
+# a hidden dependency of the project.

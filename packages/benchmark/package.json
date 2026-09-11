@@ -1,0 +1,26 @@
+{
+  "name": "@agent-native/benchmark",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agent-native/adapter-agentscope": "workspace:*",
+    "@agent-native/adapter-core": "workspace:*",
+    "@agent-native/adapter-eino": "workspace:*",
+    "@agent-native/adapter-langgraph": "workspace:*",
+    "@agent-native/adapter-mastra": "workspace:*",
+    "@agent-native/durability": "workspace:*",
+    "@agent-native/outbox": "workspace:*",
+    "@agent-native/runtime": "workspace:*",
+    "@agent-native/runtime-contract": "workspace:*",
+    "@agent-native/tool-runtime": "workspace:*",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5"
+  }
+}

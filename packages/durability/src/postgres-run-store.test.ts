@@ -9,12 +9,10 @@ describe('PostgresRunStore', () => {
   const pool = new Pool({ connectionString: databaseUrl });
   const store = new PostgresRunStore(pool);
 
-  beforeAll(async () => {
-    await store.migrate();
-    await pool.query('TRUNCATE TABLE agent_runs');
-  });
+  beforeAll(() => store.migrate());
 
   afterAll(async () => {
+    await pool.query(`DELETE FROM agent_runs WHERE run_id IN ('run-durable-1', 'run-durable-version')`);
     await pool.end();
   });
 
@@ -28,6 +26,7 @@ describe('PostgresRunStore', () => {
       metadata: { source: 'benchmark' },
     };
 
+    await pool.query('DELETE FROM agent_runs WHERE run_id = $1', [run.runId]);
     await store.saveRun(run);
     const loaded = await store.getRun(run.runId);
 
@@ -44,6 +43,7 @@ describe('PostgresRunStore', () => {
       metadata: {},
     };
 
+    await pool.query('DELETE FROM agent_runs WHERE run_id = $1', [run.runId]);
     await store.saveRun(run);
     const updated = { ...run, state: RunState.RUNNING, version: 1 };
     await store.updateRun(updated, 0);

@@ -12,3 +12,61 @@ services:
       interval: 2s
       timeout: 3s
       retries: 15
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  migrate:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./infra/compose/migrate.sql:/docker-entrypoint-initdb.d/001-migrate.sql:ro
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        until pg_isready -h postgres -U postgres -d agent_native; do sleep 1; done
+        psql -h postgres -U postgres -d agent_native -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/001-migrate.sql
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/agent_native
+      REDIS_URL: redis://redis:6379
+    command: ["pnpm", "--filter", "@agent-native/worker", "test"]
+
+  benchmark:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/agent_native
+      REDIS_URL: redis://redis:6379
+      TZ: UTC
+    command: ["pnpm", "exec", "vitest", "run", "packages/benchmark/src"]
