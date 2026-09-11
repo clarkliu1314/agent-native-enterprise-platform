@@ -1,11 +1,26 @@
 import type { Pool } from 'pg';
 import type { AgentRun } from '@agent-native/runtime-contract';
 
+/** Database representation of the application-facing AgentRun contract. */
 export type StoredRun = AgentRun;
 
+/**
+ * PostgreSQL persistence for AgentRun lifecycle state.
+ *
+ * This store deliberately stays below AgentRuntime: it knows how to durably persist a run,
+ * but it does not decide orchestration, model calls, or framework-specific state. That
+ * separation is what allows Crash Recovery and framework adapters to share one persistence
+ * contract.
+ */
 export class PostgresRunStore {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * Create the minimum schema required by the current runtime contract.
+   *
+   * `CREATE TABLE IF NOT EXISTS` keeps local integration tests repeatable. A later migration
+   * system can take ownership of schema versioning without changing the store's API.
+   */
   async migrate(): Promise<void> {
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS agent_runs (
@@ -19,6 +34,7 @@ export class PostgresRunStore {
     `);
   }
 
+  /** Persist a brand-new run. The primary key prevents accidental duplicate run creation. */
   async saveRun(run: StoredRun): Promise<void> {
     await this.pool.query(
       `INSERT INTO agent_runs (run_id, agent_id, state, input, version, metadata)
@@ -27,6 +43,7 @@ export class PostgresRunStore {
     );
   }
 
+  /** Reload a run from durable storage; null means the run ID has never been persisted. */
   async getRun(runId: string): Promise<StoredRun | null> {
     const result = await this.pool.query(
       `SELECT run_id, agent_id, state, input, version, metadata
@@ -45,6 +62,12 @@ export class PostgresRunStore {
     };
   }
 
+  /**
+   * Optimistic-concurrency update.
+   *
+   * The caller supplies the version it read. PostgreSQL updates the row only when that
+   * version is still current, preventing two workers from silently overwriting each other.
+   */
   async updateRun(run: StoredRun, expectedVersion: number): Promise<void> {
     const result = await this.pool.query(
       `UPDATE agent_runs
@@ -53,6 +76,8 @@ export class PostgresRunStore {
       [run.runId, run.agentId, run.state, JSON.stringify(run.input), run.version, JSON.stringify(run.metadata), expectedVersion],
     );
     if (result.rowCount !== 1) {
+      // Distinguish a missing run from a genuine optimistic-lock conflict so callers can
+      // choose recovery vs retry behavior deterministically.
       const current = await this.pool.query(`SELECT version FROM agent_runs WHERE run_id = $1`, [run.runId]);
       const actual = current.rows[0]?.version;
       if (actual === undefined) throw new Error(`Run not found: ${run.runId}`);
