@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { RecoveryCandidateStore, RecoveryCoordinator, type RecoveryState } from '@agent-native/durability';
 import { PostgresToolExecutionStore as DurableToolStore, ToolExecutionService, type ToolExecutionRequest } from '@agent-native/tool-runtime';
@@ -6,7 +7,6 @@ import type { BenchmarkAdapter, BenchmarkCase } from './index';
 import type { BenchmarkScenarioResult } from './scenario-runner';
 
 const ELIGIBILITY_SKEW_MS = 5_000;
-const RECOVERY_BENCHMARK_LOCK = 8_731_942;
 
 export async function executePostgresRecoveryScenario(caseId: BenchmarkCase['id'], adapter: BenchmarkAdapter, databaseUrl: string): Promise<BenchmarkScenarioResult> {
   if (!['B09', 'B10', 'B11', 'B12', 'B13'].includes(caseId)) throw new Error(`Unsupported PostgreSQL recovery benchmark case: ${caseId}`);
@@ -14,10 +14,9 @@ export async function executePostgresRecoveryScenario(caseId: BenchmarkCase['id'
   const toolStore = new DurableToolStore(pool);
   const recoveryStore = new RecoveryCandidateStore(pool);
   const outboxStore = new PostgresOutboxRepository(pool);
-  const prefix = `pg-benchmark-${caseId}-${adapter}`;
+  const prefix = `pg-benchmark-${caseId}-${adapter}-${randomUUID()}`;
 
   try {
-    await pool.query('SELECT pg_advisory_lock($1)', [RECOVERY_BENCHMARK_LOCK]);
     await toolStore.migrate();
     await recoveryStore.migrate();
     await cleanup(pool, prefix);
@@ -95,7 +94,6 @@ export async function executePostgresRecoveryScenario(caseId: BenchmarkCase['id'
     return result(caseId, adapter, { violations: reclaimed && !!replacement && !!recovered ? [] : ['idempotency'], details: `postgresql: true; adapter: ${adapter}; expired lease reclaimed: ${reclaimed}; recovered: ${recovered ? 1 : 0}; external effects: ${state.externalEffects}` });
   } finally {
     await cleanup(pool, prefix);
-    await pool.query('SELECT pg_advisory_unlock($1)', [RECOVERY_BENCHMARK_LOCK]).catch(() => undefined);
     await pool.end();
   }
 }
