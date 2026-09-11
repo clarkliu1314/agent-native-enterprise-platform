@@ -16,8 +16,8 @@ import {
  * 4. a failed external operation cannot publish a success event.
  *
  * The implementation currently uses an in-process reference store. A PostgreSQL adapter
- * will implement the same persistence callback with one database transaction, allowing
- * the application-facing runtime contract to remain framework-neutral.
+ * implements the same persistence callback with one database transaction, allowing the
+ * application-facing runtime contract to remain framework-neutral.
  */
 
 describe('ToolExecutionService', () => {
@@ -52,7 +52,7 @@ describe('ToolExecutionService', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('returns the persisted result for a retry with the same idempotency key', async () => {
+  it('returns the same logical result for a retry with the same idempotency key', async () => {
     let externalCalls = 0;
     const execute = vi.fn().mockImplementation(async () => {
       externalCalls += 1;
@@ -75,7 +75,9 @@ describe('ToolExecutionService', () => {
     const first = await service.execute(request);
     const retry = await service.execute(request);
 
-    expect(first).toEqual(retry);
+    expect(first.output).toEqual(retry.output);
+    expect(first.replayed).toBe(false);
+    expect(retry.replayed).toBe(true);
     expect(externalCalls).toBe(1);
   });
 
