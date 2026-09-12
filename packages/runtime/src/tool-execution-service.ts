@@ -12,17 +12,21 @@ export class ToolExecutionService {
   constructor(private readonly repos: DurableRepositories, private readonly permission: ToolPermission, private readonly invoker: ToolInvoker) {}
 
   async execute(input: ToolExecutionInput): Promise<unknown> {
-    const getToolCall = this.repos.getToolCall;
-    const createToolCall = this.repos.createToolCall;
-    const completeToolCall = this.repos.completeToolCall;
-    if (!getToolCall || !createToolCall || !completeToolCall) throw new Error('Durable tool persistence is required');
     const allowed = await this.permission.authorize({ runId: input.runId, agentId: input.agentId, toolName: input.toolName, input: input.input });
     if (!allowed) throw new ToolPermissionDeniedError(input.toolName);
+
+    const getToolCall = this.repos.getToolCall;
+    if (!getToolCall) throw new Error('Durable tool persistence is required');
     const existing = await getToolCall.call(this.repos, input.toolCallId);
     if (existing?.status === 'SUCCEEDED') return existing.output;
     if (existing?.kind === 'SIDE_EFFECTING' && (existing.status === 'REQUESTED' || existing.status === 'RUNNING' || existing.status === 'WAITING')) {
       throw new NonReplayableExecutionError('tool', input.toolCallId);
     }
+
+    const createToolCall = this.repos.createToolCall;
+    const completeToolCall = this.repos.completeToolCall;
+    if (!createToolCall || !completeToolCall) throw new Error('Durable tool persistence is required');
+
     await createToolCall.call(this.repos, { toolCallId: input.toolCallId, runId: input.runId, fencingToken: input.fencingToken, idempotencyKey: input.idempotencyKey, toolName: input.toolName, kind: input.kind, status: 'RUNNING', input: input.input });
     try {
       const output = await this.invoker.invoke({ toolName: input.toolName, input: input.input, idempotencyKey: input.idempotencyKey });
