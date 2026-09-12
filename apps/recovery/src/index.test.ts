@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import type { RuntimeAdapter } from '@agent-native/runtime';
+import { describe, expect, it, vi } from 'vitest';
+import type { QueuePublisher, RuntimeAdapter } from '@agent-native/runtime';
 import { composeRecovery } from './index';
 
 const adapter: RuntimeAdapter = {
@@ -10,9 +10,13 @@ const adapter: RuntimeAdapter = {
   deserializeCheckpoint: () => ({}),
 };
 
+const queue: QueuePublisher = {
+  publish: vi.fn(async () => undefined),
+};
+
 describe('recovery composition root', () => {
   it('constructs recovery against the same PostgreSQL runtime repository boundary', () => {
-    const composition = composeRecovery(adapter);
+    const composition = composeRecovery(adapter, queue);
     expect(composition.database).toBeDefined();
     expect(composition.repositories).toBeDefined();
     expect(composition.coordinator).toBeDefined();
