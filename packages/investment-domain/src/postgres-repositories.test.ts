@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InvestmentDecisionRepository, InvestmentOpportunityRepository } from './repositories';
-import { PostgresInvestmentDecisionRepository, PostgresInvestmentOpportunityRepository } from './postgres-repositories';
+import { OptimisticConcurrencyError, PostgresInvestmentDecisionRepository, PostgresInvestmentOpportunityRepository } from './postgres-repositories';
 import type { InvestmentDecision } from './investment-decision';
 import type { InvestmentOpportunity } from './opportunity';
 
@@ -79,6 +79,13 @@ describe('investment PostgreSQL persistence contract', () => {
       1,
       opportunity.version,
     ]);
+  });
+
+  it('rejects an optimistic version conflict', async () => {
+    const db = sqlClient([{ rows: [], rowCount: 0 }]);
+    const repository = new PostgresInvestmentOpportunityRepository(db);
+
+    await expect(repository.save(opportunity, 1)).rejects.toBeInstanceOf(OptimisticConcurrencyError);
   });
 
   it('reads a decision by tenant-scoped idempotency key', async () => {
