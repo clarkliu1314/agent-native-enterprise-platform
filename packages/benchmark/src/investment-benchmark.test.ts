@@ -5,10 +5,10 @@ import { investmentBenchmarkCases } from './investment-benchmark';
 describe('investment durability benchmark', () => {
   it('defines the four Stage 10 durability cases', () => {
     expect(investmentBenchmarkCases.map((testCase) => testCase.id)).toEqual([
-      'I01',
-      'I02',
-      'I03',
-      'I04',
+      'B17',
+      'B18',
+      'B19',
+      'B20',
     ]);
   });
 
