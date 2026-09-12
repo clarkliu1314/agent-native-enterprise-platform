@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS investment_decisions (
   UNIQUE (tenant_id, opportunity_id, decision_cycle),
   UNIQUE (tenant_id, idempotency_key),
   CONSTRAINT investment_decisions_opportunity_fk
-    FOREIGN KEY (opportunity_id) REFERENCES investment_opportunities(opportunity_id)
+    FOREIGN KEY (tenant_id, opportunity_id)
+    REFERENCES investment_opportunities(tenant_id, opportunity_id)
 );
 CREATE INDEX IF NOT EXISTS investment_decisions_opportunity_idx
   ON investment_decisions (tenant_id, opportunity_id, decision_cycle);
