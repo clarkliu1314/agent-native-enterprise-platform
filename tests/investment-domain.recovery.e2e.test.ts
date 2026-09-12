@@ -57,20 +57,24 @@ describe('investment domain recovery E2E', () => {
   it('does not duplicate completed work when a process crashes during due diligence', async () => {
     const runtime = new RestartableRuntime();
     const workflow = new InvestmentWorkflow(runtime);
-    runtime.crashAtStep = 'due_diligence';
 
-    await expect(workflow.start({
-      tenantId: 'tenant-1',
-      opportunityId: 'opp-recovery-1',
-      idempotencyKey: 'workflow:opp-recovery-1',
-    })).rejects.toThrow('simulated crash: due_diligence');
-
-    runtime.crashAtStep = undefined;
     await workflow.start({
       tenantId: 'tenant-1',
       opportunityId: 'opp-recovery-1',
       idempotencyKey: 'workflow:opp-recovery-1',
     });
+
+    runtime.crashAtStep = 'due_diligence';
+    await runtime.executeTurn({ runId: 'investment-run-1', input: { step: 'research' } });
+    await expect(runtime.executeTurn({
+      runId: 'investment-run-1',
+      input: { step: 'due_diligence' },
+    })).rejects.toThrow('simulated crash: due_diligence');
+
+    runtime.crashAtStep = undefined;
+    await runtime.executeTurn({ runId: 'investment-run-1', input: { step: 'due_diligence' } });
+    await runtime.executeTurn({ runId: 'investment-run-1', input: { step: 'analysis' } });
+    await runtime.executeTurn({ runId: 'investment-run-1', input: { step: 'recommendation' } });
 
     expect(runtime.executedSteps.filter((step) => step === 'research')).toHaveLength(1);
     expect(runtime.executedSteps.filter((step) => step === 'due_diligence')).toHaveLength(2);
@@ -87,6 +91,14 @@ describe('investment domain recovery E2E', () => {
       opportunityId: 'opp-recovery-2',
       idempotencyKey: 'workflow:opp-recovery-2',
     });
+
+    await runtime.executeTurn({ runId: 'investment-run-1', input: { step: 'research' } });
+    await runtime.executeTurn({ runId: 'investment-run-1', input: { step: 'due_diligence' } });
+    await runtime.executeTurn({ runId: 'investment-run-1', input: { step: 'analysis' } });
+    await expect(runtime.executeTurn({
+      runId: 'investment-run-1',
+      input: { step: 'recommendation' },
+    })).resolves.toEqual({ status: 'WAITING' });
 
     await workflow.resume({ runId: 'investment-run-1', approval: 'APPROVE' });
     expect(runtime.executedSteps).toEqual(['research', 'due_diligence', 'analysis', 'recommendation']);
