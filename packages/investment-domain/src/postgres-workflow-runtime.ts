@@ -1,19 +1,14 @@
 import type { RunView } from '@agent-native/runtime-contract/durable';
-import { DurableRuntimeService, PostgresRuntimeRepositories, type RuntimeAdapter } from '@agent-native/runtime';
+import { DurableRuntimeService, PostgresRuntimeRepositories, type RuntimeAdapter, type SqlClient, type TransactionRunner } from '@agent-native/runtime';
 import type { InvestmentWorkflowRuntime } from './runtime-port';
 
-export interface InvestmentWorkflowDatabase {
-  transaction<T>(work: (tx: {
-    query<T = Record<string, unknown>>(
-      sql: string,
-      params?: readonly unknown[],
-    ): Promise<{ rows: T[]; rowCount: number }>;
-  }) => Promise<T>): Promise<T>;
-  query<T = Record<string, unknown>>(
-    sql: string,
-    params?: readonly unknown[],
-  ): Promise<{ rows: T[]; rowCount: number }>;
-}
+/**
+ * Database boundary required by the authoritative PostgreSQL runtime.
+ * Reusing the runtime transaction contract prevents the investment domain
+ * from inventing a weaker transaction abstraction that cannot safely back
+ * durable state transitions.
+ */
+export type InvestmentWorkflowDatabase = TransactionRunner & SqlClient;
 
 const STEPS = ['research', 'due_diligence', 'analysis', 'recommendation'] as const;
 
