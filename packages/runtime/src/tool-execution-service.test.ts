@@ -35,6 +35,17 @@ describe('ToolExecutionService', () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  it('does not replay an in-flight side effect when the durable call is already RUNNING', async () => {
+    const existing: ToolCallRecord = { ...input, status: 'RUNNING' };
+    const authorize = vi.fn<ToolPermission['authorize']>().mockResolvedValue(true);
+    const getToolCall = vi.fn<NonNullable<DurableRepositories['getToolCall']>>().mockResolvedValue(existing);
+    const invoke = vi.fn<ToolInvoker['invoke']>();
+    const service = new ToolExecutionService({ getToolCall } as unknown as DurableRepositories, { authorize }, { invoke });
+
+    await expect(service.execute(input)).rejects.toMatchObject({ name: 'NonReplayableExecutionError' });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it('rejects a successful external result when the fencing token is lost', async () => {
     const authorize = vi.fn<ToolPermission['authorize']>().mockResolvedValue(true);
     const getToolCall = vi.fn<NonNullable<DurableRepositories['getToolCall']>>().mockResolvedValue(null);
