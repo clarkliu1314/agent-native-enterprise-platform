@@ -73,6 +73,7 @@
 - **E2E coverage:** added `tests/durable-runtime.e2e.test.ts` for API → PostgreSQL Run/Event/Outbox → OutboxPublisher → Worker → terminal Run.
 - **Recovery E2E:** added `tests/durable-recovery.e2e.test.ts` for expired lease → recovery reclaim → fencing token increment → recovered queue message → Worker continuation.
 - **Redis integration:** added `RedisStreamConsumer.consumeOnce()` and configurable pending-idle threshold, plus `packages/queue/src/redis.integration.test.ts` covering ACK and pending-message reclamation. CI now provisions Redis alongside PostgreSQL.
+- **Model persistence:** added `PostgresModelCallStore` plus contract tests and aligned `model_calls`/`model_call_attempts` schema with durable Model Call identity, attempts, status, result, and replay policy.
 - Fresh CI verification is still the authority; the connector currently exposes no workflow-dispatch write operation and current commit statuses have not attached a new run to the latest connector-created commits.
 
 ## Task 1: Repository and transaction primitives
@@ -99,6 +100,7 @@
 - [ ] Write RED tests for permission-before-effect, side-effecting idempotency, lost-fence result rejection, Model Call intent/result persistence, and replay policy.
 - [x] Implement `ToolExecutionService` using two transactions around external execution; never hold a DB transaction over the external call.
 - [x] Implement `ModelExecutionService` with logical call identity, request hash, provider attempts, and reconciliation/replay policy.
+- [x] Implement PostgreSQL persistence for Model Calls and provider attempts.
 - [ ] Verify crash-point tests prove no duplicate logical side effect and no stale-worker durable write.
 - [ ] Commit `feat(runtime): add durable tool and model execution services`.
 
