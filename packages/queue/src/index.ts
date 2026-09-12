@@ -4,7 +4,7 @@ import type { QueueConsumer, QueuePublisher } from '@agent-native/runtime';
 const DEFAULT_PREFIX = 'agent-native:queue:';
 
 export interface RedisCommandClient {
-  connect(): Promise<void>;
+  connect(): Promise<unknown>;
   quit(): Promise<unknown>;
   sendCommand(command: string[]): Promise<unknown>;
 }
