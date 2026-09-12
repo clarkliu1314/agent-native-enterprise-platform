@@ -54,8 +54,8 @@ class FakeDecisionRepository implements InvestmentDecisionRepository {
 }
 
 const fakeTx: InvestmentSqlClient = {
-  async query() {
-    return { rows: [], rowCount: 0 };
+  async query<T = Record<string, unknown>>() {
+    return { rows: [] as T[], rowCount: 0 };
   },
 };
 
