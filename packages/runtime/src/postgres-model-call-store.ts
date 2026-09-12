@@ -7,6 +7,24 @@ const json = (value: unknown): string => JSON.stringify(value ?? null);
 export class PostgresModelCallStore implements ModelCallStore {
   constructor(private readonly db: SqlClient) {}
 
+  async getCall(callId: string) {
+    const result = await this.db.query<Record<string, unknown>>(
+      `SELECT mc.status,mc.response,mc.error,mc.replay_policy,COUNT(mca.attempt_id)::int AS attempt_count
+       FROM model_calls mc LEFT JOIN model_call_attempts mca ON mca.call_id=mc.call_id
+       WHERE mc.call_id=$1 GROUP BY mc.call_id`,
+      [callId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      status: row.status as 'REQUESTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'WAITING',
+      response: row.response,
+      error: row.error ? String(row.error) : undefined,
+      replayPolicy: row.replay_policy as ReplayPolicy,
+      attemptCount: Number(row.attempt_count),
+    };
+  }
+
   async createCall(input: { callId: string; runId: string; turnId?: string; model: string; requestHash: string; replayPolicy: ReplayPolicy }): Promise<void> {
     await this.db.query(
       `INSERT INTO model_calls (call_id,run_id,turn_id,model,request_hash,replay_policy,status)
