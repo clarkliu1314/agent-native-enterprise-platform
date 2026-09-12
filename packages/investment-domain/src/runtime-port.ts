@@ -1,8 +1,8 @@
 import type { RunView } from '@agent-native/runtime-contract/durable';
 
 /**
- * Investment domain depends only on the durable runtime admission/resume
- * contract. Execution, leasing and fencing remain owned by the runtime worker.
+ * Investment domain depends only on durable admission, resume and observation.
+ * Execution, leasing and fencing are intentionally absent from this port.
  */
 export interface InvestmentWorkflowRuntime {
   createRun(input: {
