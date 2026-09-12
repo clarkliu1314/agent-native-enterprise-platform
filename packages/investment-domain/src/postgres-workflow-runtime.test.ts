@@ -4,28 +4,27 @@ import { PostgresInvestmentWorkflowRuntime, type InvestmentWorkflowDatabase } fr
 
 class FakeDatabase implements InvestmentWorkflowDatabase {
   runs = new Map<string, { runId: string; agentId: string; state: string; attempt: number; createdAt: string; metadata: unknown; fencingToken: bigint }>();
-  idempotency = new Map<string, string>();
-  private sequence = 0;
+  idempotency = new Map<string, { commandHash: string; runId: string }>();
 
   private execute<T = Record<string, unknown>>(sql: string, params: readonly unknown[] = []): { rows: T[]; rowCount: number } {
     if (sql.includes('FROM idempotency_keys')) {
-      const runId = this.idempotency.get(String(params[0]));
-      return runId ? { rows: [{ run_id: runId, command_hash: 'hash' }] as T[], rowCount: 1 } : { rows: [], rowCount: 0 };
+      const record = this.idempotency.get(String(params[0]));
+      return record
+        ? { rows: [{ run_id: record.runId, command_hash: record.commandHash }] as T[], rowCount: 1 }
+        : { rows: [], rowCount: 0 };
     }
     if (sql.includes('INSERT INTO idempotency_keys')) {
-      this.idempotency.set(String(params[0]), String(params[2]));
+      this.idempotency.set(String(params[0]), { commandHash: String(params[1]), runId: String(params[2]) });
       return { rows: [], rowCount: 1 };
     }
     if (sql.includes('INSERT INTO agent_runs')) {
       const runId = String(params[0]);
       const agentId = String(params[1]);
+      const input = JSON.parse(String(params[2]));
       const metadata = JSON.parse(String(params[3]));
       const createdAt = new Date().toISOString();
       this.runs.set(runId, { runId, agentId, state: 'QUEUED', attempt: 0, createdAt, metadata, fencingToken: 0n });
-      return {
-        rows: [{ run_id: runId, agent_id: agentId, state: 'QUEUED', input: JSON.parse(String(params[2])), metadata, fencing_token: 0n, attempt: 0, created_at: createdAt }] as T[],
-        rowCount: 1,
-      };
+      return { rows: [{ run_id: runId, agent_id: agentId, state: 'QUEUED', input, metadata, fencing_token: 0n, attempt: 0, created_at: createdAt }] as T[], rowCount: 1 };
     }
     if (sql.includes('SELECT * FROM agent_runs')) {
       const run = this.runs.get(String(params[0]));
