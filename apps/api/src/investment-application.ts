@@ -1,14 +1,12 @@
 import { InvestmentApplicationService, PostgresInvestmentUnitOfWork, type InvestmentDatabase } from '../../../packages/investment-domain/src/application-service';
 import type { AdvanceOpportunityStageCommand, ApproveInvestmentCommand, CreateOpportunityCommand, InvestmentDecisionCommand, RejectInvestmentCommand } from '../../../packages/investment-domain/src/commands';
 import { InvestmentWorkflow } from '../../../packages/investment-domain/src/workflow';
-import { PostgresInvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/postgres-workflow-runtime';
+import { PostgresInvestmentWorkflowRuntime, type InvestmentWorkflowDatabase } from '../../../packages/investment-domain/src/postgres-workflow-runtime';
 import type { InvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/runtime-port';
 import { PostgresDatabase } from '@agent-native/runtime';
 import type { InvestmentApiApplication } from './investment-handler';
 
-type WorkflowDatabase = InvestmentDatabase & {
-  query<T = Record<string, unknown>>(sql: string, params?: readonly unknown[]): Promise<{ rows: T[]; rowCount: number }>;
-};
+type WorkflowDatabase = InvestmentWorkflowDatabase;
 
 export class InvestmentApiApplicationAdapter implements InvestmentApiApplication {
   private readonly service: InvestmentApplicationService;
