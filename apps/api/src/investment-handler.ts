@@ -3,7 +3,7 @@ export interface InvestmentApiApplication {
   advanceStage(command: Record<string, unknown>): Promise<unknown>;
   submitDecision(command: Record<string, unknown>): Promise<unknown>;
   startWorkflow(command: Record<string, unknown>): Promise<unknown>;
-  getWorkflow(runId: string): Promise<unknown>;
+  getWorkflow(runId: string, tenantId: string): Promise<unknown>;
   resumeWorkflow(command: Record<string, unknown>): Promise<unknown>;
 }
 
@@ -16,7 +16,7 @@ export function createInvestmentHandler(application: InvestmentApiApplication) {
     const idempotencyKey = request.headers.get('idempotency-key');
     const requiresIdempotency = method === 'POST' && !url.pathname.match(/^\/investment-workflows\/[^/]+\/resume$/);
 
-    if (method !== 'GET' && (!tenantId || (requiresIdempotency && !idempotencyKey))) {
+    if (!tenantId || (method === 'POST' && requiresIdempotency && !idempotencyKey)) {
       return Response.json({ error: 'invalid_request' }, { status: 400 });
     }
 
@@ -30,9 +30,7 @@ export function createInvestmentHandler(application: InvestmentApiApplication) {
 
       const stageMatch = url.pathname.match(/^\/investment-opportunities\/([^/]+)\/stage$/);
       if (method === 'POST' && stageMatch) {
-        if (!actorId || typeof body.nextStage !== 'string' || typeof body.expectedVersion !== 'number') {
-          return Response.json({ error: 'invalid_request' }, { status: 400 });
-        }
+        if (!actorId || typeof body.nextStage !== 'string' || typeof body.expectedVersion !== 'number') return Response.json({ error: 'invalid_request' }, { status: 400 });
         const result = await application.advanceStage({ ...body, tenantId, actorId, idempotencyKey, opportunityId: decodeURIComponent(stageMatch[1]) });
         return Response.json(result, { status: 200 });
       }
@@ -50,7 +48,7 @@ export function createInvestmentHandler(application: InvestmentApiApplication) {
 
       const workflowMatch = url.pathname.match(/^\/investment-workflows\/([^/]+)$/);
       if (method === 'GET' && workflowMatch) {
-        return Response.json(await application.getWorkflow(decodeURIComponent(workflowMatch[1])), { status: 200 });
+        return Response.json(await application.getWorkflow(decodeURIComponent(workflowMatch[1]), tenantId), { status: 200 });
       }
 
       const resumeMatch = url.pathname.match(/^\/investment-workflows\/([^/]+)\/resume$/);

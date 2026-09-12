@@ -16,6 +16,7 @@ export interface AdvanceOpportunityStageCommand {
   tenantId: string;
   opportunityId: string;
   nextStage: OpportunityStage;
+  expectedVersion: number;
   actorId: string;
   idempotencyKey: string;
   now?: string;
