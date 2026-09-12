@@ -16,14 +16,15 @@ export class InvestmentWorkflow {
     idempotencyKey: string;
     fencingToken: bigint;
   }): Promise<InvestmentWorkflowStartResult> {
-    const run = await this.runtime.startRun(input);
+    const { fencingToken, ...admission } = input;
+    const run = await this.runtime.startRun(admission);
     const startAt = Math.max(0, Math.min(run.nextStep ?? 0, WORKFLOW_STEPS.length));
 
     for (let index = startAt; index < WORKFLOW_STEPS.length; index += 1) {
       const step = WORKFLOW_STEPS[index];
       const result = await this.runtime.executeTurn({
         runId: run.runId,
-        fencingToken: input.fencingToken,
+        fencingToken,
         input: { opportunityId: input.opportunityId, step },
       });
       if (result.status === 'WAITING' || result.status === 'COMPLETED') break;
