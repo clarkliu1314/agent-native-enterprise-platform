@@ -39,17 +39,18 @@ export class InvestmentWorkflowRuntimeAdapter implements RuntimeAdapter {
 
     while (nextStep < STEPS.length) {
       if (input.signal?.aborted) throw new DOMException('Run execution aborted', 'AbortError');
-      const step = STEPS[nextStep];
       nextStep += 1;
       const state = { tenantId, opportunityId, nextStep } satisfies WorkflowMetadata;
       const checkpointSequence = BigInt(input.run.attempt) * 100n + BigInt(nextStep);
 
-      await this.database.query(
+      const updated = await this.database.query(
         `UPDATE agent_runs
          SET metadata=$2::jsonb, version=version+1
-         WHERE run_id=$1 AND state='RUNNING' AND lease_owner=$3 AND fencing_token=$4::bigint`,
-        [input.run.runId, JSON.stringify(state), String(input.run.metadata.leaseOwner ?? ''), input.run.fencingToken.toString()],
+         WHERE run_id=$1 AND state='RUNNING' AND fencing_token=$3::bigint`,
+        [input.run.runId, JSON.stringify(state), input.run.fencingToken.toString()],
       );
+      if (updated.rowCount !== 1) throw new Error(`Investment workflow fenced write rejected: ${input.run.runId}`);
+
       await this.repositories.saveCheckpoint({
         checkpointId: `${input.run.runId}:checkpoint:${checkpointSequence}`,
         runId: input.run.runId,
