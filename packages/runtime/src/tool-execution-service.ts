@@ -1,5 +1,5 @@
 import type { ToolKind } from '@agent-native/runtime-contract/durable';
-import { LostFencingError, ToolPermissionDeniedError } from './errors';
+import { LostFencingError, NonReplayableExecutionError, ToolPermissionDeniedError } from './errors';
 import type { ToolInvoker, ToolPermission } from './ports';
 import type { DurableRepositories } from './repositories';
 
@@ -20,6 +20,9 @@ export class ToolExecutionService {
     if (!allowed) throw new ToolPermissionDeniedError(input.toolName);
     const existing = await getToolCall.call(this.repos, input.toolCallId);
     if (existing?.status === 'SUCCEEDED') return existing.output;
+    if (existing?.kind === 'SIDE_EFFECTING' && (existing.status === 'REQUESTED' || existing.status === 'RUNNING' || existing.status === 'WAITING')) {
+      throw new NonReplayableExecutionError('tool', input.toolCallId);
+    }
     await createToolCall.call(this.repos, { toolCallId: input.toolCallId, runId: input.runId, fencingToken: input.fencingToken, idempotencyKey: input.idempotencyKey, toolName: input.toolName, kind: input.kind, status: 'RUNNING', input: input.input });
     try {
       const output = await this.invoker.invoke({ toolName: input.toolName, input: input.input, idempotencyKey: input.idempotencyKey });
@@ -27,6 +30,7 @@ export class ToolExecutionService {
       if (!persisted) throw new LostFencingError(input.runId);
       return output;
     } catch (error) {
+      if (error instanceof LostFencingError) throw error;
       await completeToolCall.call(this.repos, { toolCallId: input.toolCallId, runId: input.runId, fencingToken: input.fencingToken, status: 'FAILED', error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
