@@ -1,5 +1,6 @@
 import { InvestmentApplicationService, PostgresInvestmentUnitOfWork, type InvestmentDatabase } from '../../../packages/investment-domain/src/application-service';
 import type { AdvanceOpportunityStageCommand, ApproveInvestmentCommand, CreateOpportunityCommand, InvestmentDecisionCommand, RejectInvestmentCommand } from '../../../packages/investment-domain/src/commands';
+import { InvestmentWorkflow } from '../../../packages/investment-domain/src/workflow';
 import { PostgresInvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/postgres-workflow-runtime';
 import type { InvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/runtime-port';
 import { PostgresDatabase } from '@agent-native/runtime';
@@ -11,17 +12,17 @@ type WorkflowDatabase = InvestmentDatabase & {
 
 export class InvestmentApiApplicationAdapter implements InvestmentApiApplication {
   private readonly service: InvestmentApplicationService;
-  private readonly workflow: InvestmentWorkflowRuntime;
-  private readonly database: WorkflowDatabase;
+  private readonly workflowRuntime: InvestmentWorkflowRuntime;
+  private readonly workflow: InvestmentWorkflow;
 
   constructor(
     database: WorkflowDatabase = new PostgresDatabase(),
     service: InvestmentApplicationService = new InvestmentApplicationService(new PostgresInvestmentUnitOfWork(database)),
-    workflow: InvestmentWorkflowRuntime = new PostgresInvestmentWorkflowRuntime(database),
+    workflowRuntime: InvestmentWorkflowRuntime = new PostgresInvestmentWorkflowRuntime(database),
   ) {
-    this.database = database;
     this.service = service;
-    this.workflow = workflow;
+    this.workflowRuntime = workflowRuntime;
+    this.workflow = new InvestmentWorkflow(workflowRuntime);
   }
 
   createOpportunity(command: Record<string, unknown>): Promise<unknown> {
@@ -32,31 +33,32 @@ export class InvestmentApiApplicationAdapter implements InvestmentApiApplication
   }
   submitDecision(command: Record<string, unknown>): Promise<unknown> {
     const decision = command as unknown as InvestmentDecisionCommand;
-    if (decision.recommendation === 'APPROVE') {
-      return this.service.approve(decision as ApproveInvestmentCommand);
-    }
-    if (decision.recommendation === 'REJECT') {
-      return this.service.reject(decision as RejectInvestmentCommand);
-    }
+    if (decision.recommendation === 'APPROVE') return this.service.approve(decision as ApproveInvestmentCommand);
+    if (decision.recommendation === 'REJECT') return this.service.reject(decision as RejectInvestmentCommand);
     return Promise.reject(new Error(`Unsupported investment recommendation: ${String(decision.recommendation)}`));
   }
   startWorkflow(command: Record<string, unknown>): Promise<unknown> {
-    return this.workflow.startRun({ tenantId: String(command.tenantId), opportunityId: String(command.opportunityId), idempotencyKey: String(command.idempotencyKey) });
+    return this.workflow.start({
+      tenantId: String(command.tenantId),
+      opportunityId: String(command.opportunityId),
+      idempotencyKey: String(command.idempotencyKey),
+    });
   }
   async getWorkflow(runId: string, tenantId: string): Promise<unknown> {
-    const result = await this.database.query<{ run_id: string; state: string; metadata: Record<string, unknown> }>(
-      `SELECT run_id, state, metadata FROM agent_runs WHERE run_id=$1 AND metadata->>'tenantId'=$2`, [runId, tenantId],
-    );
-    const row = result.rows[0];
-    if (!row) throw new Error(`Investment workflow not found: ${runId}`);
-    return { runId: row.run_id, state: row.state, nextStep: Number((row.metadata ?? {}).nextStep ?? 0) };
+    const run = await this.workflowRuntime.getRun(runId);
+    if (String(run.metadata.tenantId ?? '') !== tenantId) throw new Error(`Investment workflow not found: ${runId}`);
+    return {
+      runId: run.runId,
+      state: run.state,
+      nextStep: Number(run.metadata.nextStep ?? 0),
+    };
   }
   async resumeWorkflow(command: Record<string, unknown>): Promise<unknown> {
     const runId = String(command.runId);
     const tenantId = String(command.tenantId);
-    const owned = await this.database.query(`SELECT 1 FROM agent_runs WHERE run_id=$1 AND metadata->>'tenantId'=$2`, [runId, tenantId]);
-    if (owned.rowCount !== 1) throw new Error(`Investment workflow not found: ${runId}`);
-    await this.workflow.resumeRun({ runId, input: command });
+    const run = await this.workflowRuntime.getRun(runId);
+    if (String(run.metadata.tenantId ?? '') !== tenantId) throw new Error(`Investment workflow not found: ${runId}`);
+    await this.workflow.resume({ runId, approval: String(command.approval) as 'APPROVE' | 'REJECT' });
     return undefined;
   }
 }
