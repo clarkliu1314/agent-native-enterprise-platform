@@ -56,10 +56,13 @@ CREATE TABLE IF NOT EXISTS agent_events (
 );
 CREATE INDEX IF NOT EXISTS agent_events_run_sequence_idx ON agent_events (run_id, sequence);
 
+-- The outbox is a generic durable delivery table. Agent lifecycle events populate
+-- event_id/topic explicitly, while tool-execution events may not have an agent_event
+-- row; therefore event_id is unique but intentionally not FK-constrained here.
 CREATE TABLE IF NOT EXISTS outbox_events (
-  outbox_id TEXT PRIMARY KEY,
-  event_id TEXT NOT NULL UNIQUE REFERENCES agent_events(event_id),
-  topic TEXT NOT NULL,
+  outbox_id TEXT PRIMARY KEY DEFAULT ('outbox:' || gen_random_uuid()::text),
+  event_id TEXT NOT NULL UNIQUE DEFAULT ('event:' || gen_random_uuid()::text),
+  topic TEXT NOT NULL DEFAULT 'runtime',
   payload JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   published_at TIMESTAMPTZ,
