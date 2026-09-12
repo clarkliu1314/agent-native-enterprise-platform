@@ -23,7 +23,8 @@ describe('lease heartbeat', () => {
     const heartbeat = createLeaseHeartbeat(renew, { intervalMs: 100 });
     const handle = heartbeat.start({ runId: 'run-1', owner: 'worker-1', fencingToken: 7n, leaseMs: 3000 });
 
-    await expect(vi.advanceTimersByTimeAsync(100)).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(renew).toHaveBeenCalledOnce();
     handle.stop();
     vi.useRealTimers();
   });
