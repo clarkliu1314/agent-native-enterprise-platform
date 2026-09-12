@@ -20,33 +20,33 @@
 - Adapter behavior is measured through one identical contract and benchmark suite.
 - No production code is introduced before its corresponding test has demonstrated the intended failure mode.
 
-### Task 1: Runtime Contract and test harness
+## Task 1: Runtime Contract and test harness
 - [x] Write contract tests for initial run creation, valid state transitions, checkpoint/recovery, cancellation, and invalid transitions.
 - [x] Run the tests and confirm they fail because the runtime contract implementation is absent.
 - [x] Add only the minimal type/runtime implementation needed for the tests.
 - [x] Run the complete contract test suite.
 - [x] Refactor while keeping the contract tests green.
 
-### Task 2: In-memory reference runtime
+## Task 2: In-memory reference runtime
 - [x] Write failing lifecycle tests.
 - [x] Verify RED.
 - [x] Implement minimal state machine.
 - [x] Verify GREEN.
 - [x] Add recovery and cancellation edge cases.
 
-### Task 3: Durable persistence model
+## Task 3: Durable persistence model
 - [x] Add database contract tests against PostgreSQL.
 - [x] Verify RED for missing tables/operations.
 - [x] Implement schema and repository.
 - [x] Verify GREEN and transaction rollback behavior.
 
-### Task 4: Tool Permission, Idempotency, and Outbox
+## Task 4: Tool Permission, Idempotency, and Outbox
 - [x] Specify allow/deny conditions and default-deny behavior in tests.
 - [x] Specify duplicate request semantics and result replay in tests.
 - [x] Specify transactional outbox insertion and publish/retry semantics in tests.
 - [x] Implement the minimal passing versions.
 
-### Task 5: Crash recovery
+## Task 5: Crash recovery
 - [x] Add crash-point fixtures for before tool execution, after external effect, after result persistence, and before outbox publish.
 - [x] Verify each fixture fails before recovery logic exists.
 - [x] Implement deterministic recovery using persisted state and idempotency records.
@@ -54,12 +54,12 @@
 
 **Production follow-up:** Issue #2 was completed after durable candidate discovery, atomic `FOR UPDATE SKIP LOCKED` claims, lease/token ownership, expired-lease reclaim, durable retry/backoff and terminal classification, crash-safe restart tests, structured recovery outcomes, and CI Run #141 passed.
 
-### Task 6: Four framework adapters
+## Task 6: Four framework adapters
 - [x] Define one adapter interface over the runtime contract.
 - [x] Implement reference adapters and capability declarations.
 - [x] Run the same contract tests against every adapter.
 
-### Task 7: 16-case benchmark
+## Task 7: 16-case benchmark
 
 **Status:** Complete. All 16 benchmark definitions, the 64-case adapter matrix, framework-neutral execution, real executable scenarios through B16, deterministic machine-readable artifact generation, and CI hard safety gates are implemented. The authoritative post-fix CI runs #287 and #288 both passed on the merged benchmark head. The benchmark artifact is uploaded as `benchmark-results` and the hard gate requires schemaVersion 1, exactly 64 results, 64 passed, zero failed, and zero invariant violations.
 
@@ -71,29 +71,31 @@
 - [x] Implement executable B14-B16 retry/backoff, terminal-failure, and concurrent-worker scenarios.
 - [x] Emit deterministic machine-readable benchmark results and CI artifacts.
 
-### Task 8: Local Docker Compose environment
+## Task 8: Local Docker Compose environment
 
-**Status:** Complete for the current application boundary — PostgreSQL, Redis, deterministic migration/seed, worker smoke service, benchmark smoke service, Compose health/dependency gates, and CI Compose validation are implemented. The repository intentionally does not fabricate a fake model provider or a fake durable API runtime. The real request boundary is implemented under Task 9 and will be connected to a durable runtime composition when that runtime composition is available.
+**Status:** Complete for the current application boundary. PostgreSQL, Redis, deterministic migration/seed, worker smoke service, benchmark smoke service, Compose health/dependency gates, and CI Compose validation are implemented. The durable API/worker runtime composition is now being wired under the approved Durable Runtime Composition plan.
 
 - [x] Bring up the currently implemented local infrastructure: PostgreSQL, Redis, migration, worker smoke service, and benchmark runner.
 - [x] Add health checks and deterministic seed data.
 - [x] Add a single CI-style smoke-test sequence using `docker compose up --build -d`, `docker compose wait benchmark`, and an explicit benchmark exit-code assertion.
 - [x] Keep fake API/web/mock-LLM services out of Compose until their corresponding production boundaries are implemented safely.
 
-### Task 9: Vercel deployment boundary
+## Task 9: Vercel deployment boundary
 
-**Status:** Complete for the current architecture. The remaining unchecked composition-root item is intentionally deferred because the durable runtime/repository composition must be established before wiring it into the stateless request boundary.
+**Status:** Complete for the stateless request boundary; durable composition wiring is in progress under the approved 2026-09-12 implementation plan.
 
 - [x] Keep durable worker/database operations outside request-lifetime assumptions.
 - [x] Route model calls through a provider-agnostic LLM gateway boundary.
 - [x] Document environment variables, deployment topology, and failure semantics.
 - [x] Add API typecheck/build commands and a build-contract test.
 - [x] Verify the revised CI workflow with API typecheck/build passes (Run #189).
-- [x] Verify focused boundary tests, full test suite, repository typecheck, API typecheck/build, and Compose smoke/configuration (Run #189).
+- [x] Verify focused boundary tests, full test suite, repository typecheck, API typecheck/build, and Compose smoke (Run #189).
+- [x] Add the stateless durable handler contract: async 202, bounded sync 200/202, idempotency conflict 409, and durable GET state.
+- [ ] Verify the new RuntimeFacade-backed composition against fresh CI.
 
-### Task 10: CI and verification
+## Task 10: CI and verification
 
-**Status:** Complete for the current benchmark/application boundary. The previous Run #275 typecheck and B16 assertion failures were corrected. Authoritative Runs #287 and #288 on head `855994d58903c7cbc826d2fd7693e982f7fe7828` completed successfully; `test` and `compose-smoke` both passed. The test job passed repository typecheck, API typecheck/build, deployment-boundary verification, benchmark hard gate, artifact upload, and the full test suite. Compose smoke passed configuration, benchmark, worker, and migration assertions.
+**Status:** Benchmark/application foundation is complete; durable runtime composition is now the active verification gate. Run #354 is the latest fully green validation of the pre-integration composition head. Later commits added PostgreSQL schema alignment, repository integration tests, and a CI migration step; they require a fresh authoritative run.
 
 - [x] Run type checking, unit/integration tests, and deployment-boundary contract tests in CI.
 - [x] Add a workspace packaging contract covering stable `main`/`types`/root `exports` and workspace dependency exportability.
@@ -102,6 +104,8 @@
 - [x] Add/verify formatting checks if the repository adopts a formatter contract.
 - [x] Require all benchmark safety contracts before merge.
 - [x] Publish deterministic benchmark artifacts.
+- [ ] Verify durable PostgreSQL repository integration against the migrated schema in fresh CI.
+- [ ] Verify end-to-end API → durable state → Worker/Recovery/Outbox behavior.
 
 ## Run #275 root-cause checkpoint
 
@@ -119,13 +123,17 @@
 - Authoritative CI runs #287 and #288 both completed with `success` against benchmark head `855994d58903c7cbc826d2fd7693e982f7fe7828`.
 - No benchmark GREEN claim is based on the earlier failed Runs #275/#277/#278; only the fresh post-fix runs are authoritative.
 
-## Durable Runtime Composition Implementation Gate
+## Durable Runtime Composition checkpoint
 
-**Status: Implementation in progress.** The approved design was converted into `docs/superpowers/plans/2026-09-12-durable-runtime-composition.md` in commit `aeeebb69aecebee3636ca6e3945ebf0d49ba6309`, and execution is underway on `feat/durable-runtime-composition` / PR #5.
+The approved Durable Runtime Composition + Vercel Request-Boundary Design has moved from design-only status into implementation on `feat/durable-runtime-composition` (PR #5). The dedicated implementation plan is `docs/superpowers/plans/2026-09-12-durable-runtime-composition.md`.
 
-Run #343 is authoritative GREEN for the preceding runtime slice: repository typecheck, API typecheck/build, deployment-boundary verification, benchmark hard gate (64/64), full test suite (173/173), and Compose smoke all passed. After that GREEN checkpoint, the implementation advanced with atomic lifecycle transition + Event + Outbox persistence, bounded-deadline continuation handling, and the first facade-driven durable worker queue service. These newest commits are separately gated by the next CI run and are not yet marked GREEN until verified.
+Implemented in the current slice: framework-neutral durable RuntimeFacade contracts, PostgreSQL repository/transaction primitives, atomic Run admission, six-state lifecycle transitions, Event + Outbox atomic persistence, API idempotency replay/conflict, lease/fencing, Tool/Model durable-step boundaries, opaque checkpoints, RecoveryCoordinator, OutboxPublisher, facade-driven DurableWorker, fenced lease heartbeat, Redis Streams publisher/consumer, and separate API/Worker/Recovery/Outbox composition roots. The API preserves stateless request semantics and bounded sync execution.
 
-**Design decisions locked:**
+A material schema drift was found before claiming the new slice green: the existing Compose migration still described the earlier benchmark-oriented `agent_runs`/`outbox_events` shape, while the new repositories require fencing, lifecycle timestamps, event sequencing, idempotency, checkpoints, tool calls, and publisher claim fields. The migration was aligned and a real PostgreSQL integration test was added. CI now explicitly applies `infra/compose/migrate.sql` before running the repository suite.
+
+Current authoritative verification boundary: **fresh CI after commits `54629dc`, `a8d7271`, `8fd3436`, and the documentation checkpoint is required.** Do not mark this composition phase GREEN until the integration tests, full suite, benchmark hard gate, API build/boundary, and Compose smoke all pass on the same current head.
+
+### Approved durable runtime architecture remains locked
 
 1. `POST /runs`: async by default (`202`), optional bounded sync (`200` if terminal within budget; otherwise `202` and durable continuation).
 2. Scheduler: Outbox/Redis primary path with PostgreSQL `FOR UPDATE SKIP LOCKED` recovery fallback.
@@ -143,14 +151,6 @@ Run #343 is authoritative GREEN for the preceding runtime slice: repository type
 14. Event ordering: transactional Event + Outbox with per-Run monotonic sequence.
 15. Composition roots: API, Worker, Recovery, and Outbox Publisher are separate processes/roots sharing the same Runtime implementation and framework-neutral Ports.
 
-### Execution tracking
+## Next implementation gate
 
-- [x] Write the detailed TDD-first implementation plan with explicit affected files, repository contracts, composition-root wiring, E2E cases, and verification checkpoints.
-- [ ] Task 1 — PostgreSQL repository/transaction primitives.
-- [ ] Task 2 — RuntimeFacade lifecycle services.
-- [ ] Task 3 — Tool/Model durable execution steps.
-- [ ] Task 4 — Checkpoint/Recovery.
-- [ ] Task 5 — Worker/Outbox process roots.
-- [ ] Task 6 — Vercel API composition.
-- [ ] Task 7 — Recovery/Publisher process roots.
-- [ ] Task 8 — API→durable state→Worker/Recovery E2E and documentation closeout.
+Do not move to the investment-domain application until the durable runtime composition is green under a fresh authoritative CI run and the end-to-end API → PostgreSQL → Outbox/Redis → Worker/Recovery path is verified. After that gate, proceed to the equity-investment domain layer on top of the stable RuntimeFacade rather than coupling business logic to any framework adapter.
