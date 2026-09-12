@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { InvestmentDecision } from './investment-decision';
 import type { InvestmentDomainEvent } from './events';
 import type { InvestmentOpportunityRepository, InvestmentDecisionRepository } from './repositories';
-import { InvestmentApplicationService, type InvestmentUnitOfWork, type InvestmentSqlClient } from './application-service';
+import { InvestmentApplicationService, type InvestmentUnitOfWork, type InvestmentSqlClient, type InvestmentTransactionContext } from './application-service';
 import type { InvestmentOpportunity } from './opportunity';
 
 const opportunity: InvestmentOpportunity = {
@@ -64,7 +64,7 @@ class FakeUnitOfWork implements InvestmentUnitOfWork {
   readonly decisions = new FakeDecisionRepository();
   readonly events: InvestmentDomainEvent[] = [];
 
-  async transaction<T>(work: Parameters<InvestmentUnitOfWork['transaction']>[0]): Promise<T> {
+  async transaction<T>(work: (context: InvestmentTransactionContext) => Promise<T>): Promise<T> {
     return work({
       tx: fakeTx,
       opportunities: this.opportunities,
