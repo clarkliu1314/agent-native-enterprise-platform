@@ -1,5 +1,5 @@
 import { InvestmentApplicationService, PostgresInvestmentUnitOfWork, type InvestmentDatabase } from '../../../packages/investment-domain/src/application-service';
-import type { AdvanceOpportunityStageCommand, CreateOpportunityCommand, InvestmentDecisionCommand } from '../../../packages/investment-domain/src/commands';
+import type { AdvanceOpportunityStageCommand, ApproveInvestmentCommand, CreateOpportunityCommand, InvestmentDecisionCommand, RejectInvestmentCommand } from '../../../packages/investment-domain/src/commands';
 import { PostgresInvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/postgres-workflow-runtime';
 import type { InvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/runtime-port';
 import { PostgresDatabase } from '@agent-native/runtime';
@@ -32,8 +32,12 @@ export class InvestmentApiApplicationAdapter implements InvestmentApiApplication
   }
   submitDecision(command: Record<string, unknown>): Promise<unknown> {
     const decision = command as unknown as InvestmentDecisionCommand;
-    if (decision.recommendation === 'APPROVE') return this.service.approve(decision);
-    if (decision.recommendation === 'REJECT') return this.service.reject(decision);
+    if (decision.recommendation === 'APPROVE') {
+      return this.service.approve(decision as ApproveInvestmentCommand);
+    }
+    if (decision.recommendation === 'REJECT') {
+      return this.service.reject(decision as RejectInvestmentCommand);
+    }
     return Promise.reject(new Error(`Unsupported investment recommendation: ${String(decision.recommendation)}`));
   }
   startWorkflow(command: Record<string, unknown>): Promise<unknown> {
