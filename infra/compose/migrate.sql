@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS model_calls (
   model TEXT NOT NULL,
   request_hash TEXT NOT NULL,
   replay_policy TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'REQUESTED',
   response JSONB,
   error TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
