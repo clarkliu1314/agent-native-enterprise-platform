@@ -21,8 +21,8 @@ class RestartableRuntime implements InvestmentWorkflowRuntime {
   readonly executedSteps: string[] = [];
   crashAtStep: string | undefined;
 
-  async startRun(): Promise<{ runId: string }> {
-    return { runId: this.state.runId };
+  async startRun(): Promise<{ runId: string; nextStep: number }> {
+    return { runId: this.state.runId, nextStep: this.state.nextStep };
   }
 
   async executeTurn(input: { runId: string; input: unknown }): Promise<{ status: 'CONTINUE' | 'WAITING' | 'COMPLETED' }> {
