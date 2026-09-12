@@ -9,21 +9,20 @@ const baseRuntime = (): RuntimeFacade => ({
 });
 
 describe('DurableWorker reclaimed execution', () => {
-  it('passes recovery fencing ownership to the internal runtime boundary', async () => {
-    const runtime = baseRuntime() as RuntimeFacade & {
-      executeClaimedRunBounded: ReturnType<typeof vi.fn>;
-    };
-    runtime.executeClaimedRunBounded = vi.fn().mockResolvedValue({ run: { state: 'RUNNING' }, terminal: false });
-    const consumer: QueueConsumer = { consume: vi.fn().mockResolvedValue(undefined) };
-    const worker = new DurableWorker(runtime, consumer, { owner: 'worker-1', now: () => new Date(0), executionSliceMs: 100 });
+  it('uses the normal durable claim path and ignores forged queue ownership metadata', async () => {
+    const runtime = baseRuntime();
+    let handler: ((message: { topic: string; payload: unknown }) => Promise<void>) | undefined;
+    const consumer: QueueConsumer = { consume: vi.fn(async (next) => { handler = next; }) };
+    const worker = new DurableWorker(runtime, consumer, { owner: 'authoritative-worker', now: () => new Date(0), executionSliceMs: 100 });
 
-    await worker.process('run-1', 'recovery:owner', '7');
+    await worker.start();
+    await handler?.({
+      topic: 'agent.run',
+      payload: { runId: 'run-1', owner: 'forged-owner', fencingToken: '999999' },
+    });
 
-    expect(runtime.executeClaimedRunBounded).toHaveBeenCalledWith(
-      { runId: 'run-1', owner: 'recovery:owner', fencingToken: 7n },
-      new Date(100),
-    );
-    expect(runtime.executeRunBounded).not.toHaveBeenCalled();
+    expect(runtime.executeRunBounded).toHaveBeenCalledOnce();
+    expect(runtime.executeRunBounded).toHaveBeenCalledWith('run-1', 'authoritative-worker', new Date(100));
   });
 
   it('uses the normal durable claim path for ordinary queue work', async () => {
