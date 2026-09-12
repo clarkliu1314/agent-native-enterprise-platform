@@ -1,1 +1,16 @@
 export { InMemoryAgentRuntime } from './in-memory-runtime';
+export { DurableRuntimeService, hashCommand } from './runtime-service';
+export { DurableWorker } from './durable-worker';
+export { PostgresDatabase } from './postgres-client';
+export { PostgresRuntimeRepositories } from './postgres-runtime-repositories';
+export { PostgresToolRepositories } from './postgres-tool-repositories';
+export { PostgresOutboxRepository } from './postgres-outbox-repository';
+export { PostgresModelCallStore } from './postgres-model-call-store';
+export { OutboxPublisher } from './outbox-publisher';
+export { RecoveryCoordinator } from './recovery-coordinator';
+export { ToolExecutionService } from './tool-execution-service';
+export { ModelExecutionService, hashModelRequest } from './model-execution-service';
+export { CheckpointService } from './checkpoint-service';
+export type * from './ports';
+export type * from './repositories';
+export * from './errors';

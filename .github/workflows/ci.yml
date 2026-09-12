@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -22,8 +23,18 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 15
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/agent_native
+      REDIS_URL: redis://localhost:6379
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,6 +48,13 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Migrate PostgreSQL
+        run: |
+          docker run --rm --network host \
+            -e PGPASSWORD=postgres \
+            -v "$PWD/infra/compose/migrate.sql:/migrate.sql:ro" \
+            postgres:17-alpine \
+            psql -h 127.0.0.1 -U postgres -d agent_native -v ON_ERROR_STOP=1 -f /migrate.sql
       - name: Typecheck
         run: pnpm typecheck
       - name: Typecheck API

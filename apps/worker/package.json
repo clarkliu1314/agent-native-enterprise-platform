@@ -3,17 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./src/recovery-worker.ts",
-  "types": "./src/recovery-worker.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./src/recovery-worker.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@agent-native/durability": "workspace:*",
-    "@agent-native/tool-runtime": "workspace:*"
+    "@agent-native/runtime": "workspace:*",
+    "@agent-native/tool-runtime": "workspace:*",
+    "@agent-native/queue": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^3.2.4"
