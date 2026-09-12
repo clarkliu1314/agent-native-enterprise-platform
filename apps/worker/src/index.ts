@@ -7,12 +7,12 @@ import {
 import type { QueueConsumer, RuntimeAdapter } from '@agent-native/runtime';
 import { createRedisConsumer, type RedisStreamConsumer } from '@agent-native/queue';
 
-export interface WorkerComposition {
+export interface WorkerComposition<C extends QueueConsumer = QueueConsumer> {
   database: PostgresDatabase;
   repositories: PostgresToolRepositories;
   runtime: DurableRuntimeService;
   worker: DurableWorker;
-  consumer: QueueConsumer;
+  consumer: C;
 }
 
 export interface WorkerCompositionOptions {
@@ -45,9 +45,20 @@ export function composeRedisWorker(
   adapter: RuntimeAdapter,
   redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379',
   options: WorkerCompositionOptions = {},
-): WorkerComposition & { consumer: RedisStreamConsumer } {
+): WorkerComposition<RedisStreamConsumer> {
   const consumer = createRedisConsumer(redisUrl);
-  return composeWorker(adapter, consumer, options);
+  const database = new PostgresDatabase();
+  const repositories = new PostgresToolRepositories(database);
+  const runtime = new DurableRuntimeService(repositories, {
+    adapter,
+    leaseMs: options.leaseMs,
+    heartbeatMs: options.heartbeatMs,
+  });
+  const worker = new DurableWorker(runtime, consumer, {
+    owner: options.owner ?? `worker-${process.pid}`,
+    executionSliceMs: options.executionSliceMs,
+  });
+  return { database, repositories, runtime, worker, consumer };
 }
 
 export { RecoveryWorker } from './recovery-worker';
