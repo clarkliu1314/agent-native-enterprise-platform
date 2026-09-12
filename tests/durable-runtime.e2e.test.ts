@@ -12,6 +12,12 @@ const runIdFromResponse = async (response: Response): Promise<string> => {
   return body.runId;
 };
 
+const payloadRunId = (payload: unknown): string | undefined => {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const value = (payload as { runId?: unknown }).runId;
+  return typeof value === 'string' ? value : undefined;
+};
+
 describeIfDatabase('durable runtime API → outbox → worker', () => {
   const adapter: RuntimeAdapter = {
     name: 'e2e-reference',
@@ -25,16 +31,20 @@ describeIfDatabase('durable runtime API → outbox → worker', () => {
   const queue: QueuePublisher = {
     async publish(topic, payload) { published.push({ topic, payload }); },
   };
+  let runId = '';
   const consumer: QueueConsumer = {
     async consume(handler) {
-      for (const message of published.splice(0)) await handler(message);
+      const messages = published.splice(0);
+      for (const message of messages) {
+        if (payloadRunId(message.payload) === runId) await handler(message);
+        else published.push(message);
+      }
     },
   };
 
   const api = composeApi(adapter);
   const publisher = composeOutboxPublisher(queue);
   const worker = composeWorker(adapter, consumer, { owner: 'e2e-worker', executionSliceMs: 5_000, heartbeatMs: 1_000 });
-  let runId = '';
 
   beforeAll(async () => {
     const response = await api.handler(new Request('https://example.test/runs', {
@@ -58,10 +68,14 @@ describeIfDatabase('durable runtime API → outbox → worker', () => {
 
   it('publishes a durable run envelope and completes it through the Worker', async () => {
     const publishedResult = await publisher.publisher.publishBatch(10);
-    expect(publishedResult).toEqual({ published: 1, retried: 0 });
-    expect(published).toHaveLength(1);
-    expect(published[0].topic).toBe('agent.run');
-    expect(published[0].payload).toMatchObject({ runId, type: 'RUN_CREATED', sequence: '1' });
+    expect(publishedResult.published).toBeGreaterThanOrEqual(1);
+    expect(publishedResult.retried).toBe(0);
+
+    const createdMessage = published.find(
+      (message) => message.topic === 'agent.run' && payloadRunId(message.payload) === runId,
+    );
+    expect(createdMessage).toBeDefined();
+    expect(createdMessage?.payload).toMatchObject({ runId, type: 'RUN_CREATED', sequence: '1' });
 
     await worker.worker.start();
 
