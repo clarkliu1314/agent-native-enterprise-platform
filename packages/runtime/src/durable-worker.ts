@@ -12,18 +12,13 @@ export interface DurableWorkerOptions {
 
 export interface DurableRunMessage {
   runId: string;
-  owner?: string;
-  fencingToken?: string;
-}
-
-interface ClaimedExecutionRuntime extends RuntimeFacade {
-  executeClaimedRunBounded(input: { runId: string; owner: string; fencingToken: bigint }, deadlineAt: Date): Promise<unknown>;
 }
 
 /**
- * Queue-driven worker boundary. RuntimeFacade remains the execution authority;
- * reclaimed work carries its fencing token so recovery never requires a stale
- * RUNNING row to be moved back to QUEUED.
+ * Queue-driven worker boundary. The queue carries only durable work identity;
+ * RuntimeFacade performs the authoritative claim and returns the fencing token
+ * internally. This prevents callers or queue publishers from forging lease
+ * ownership or fencing metadata.
  */
 export class DurableWorker {
   private readonly executionSliceMs: number;
@@ -42,20 +37,12 @@ export class DurableWorker {
     await this.consumer.consume(async (message) => {
       const payload = message.payload as Partial<DurableRunMessage>;
       if (message.topic !== 'agent.run' || typeof payload.runId !== 'string' || payload.runId.length === 0) return;
-      await this.process(payload.runId, payload.owner, payload.fencingToken);
+      await this.process(payload.runId);
     });
   }
 
-  async process(runId: string, claimedOwner?: string, fencingToken?: string): Promise<void> {
+  async process(runId: string): Promise<void> {
     const deadlineAt = new Date(this.now().getTime() + this.executionSliceMs);
-    if (claimedOwner && fencingToken) {
-      const token = BigInt(fencingToken);
-      const claimedRuntime = this.runtime as ClaimedExecutionRuntime;
-      if (typeof claimedRuntime.executeClaimedRunBounded === 'function') {
-        await claimedRuntime.executeClaimedRunBounded({ runId, owner: claimedOwner, fencingToken: token }, deadlineAt);
-        return;
-      }
-    }
     await this.runtime.executeRunBounded(runId, this.options.owner, deadlineAt);
   }
 }
