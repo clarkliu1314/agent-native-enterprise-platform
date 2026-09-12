@@ -1,6 +1,6 @@
 # Durable Runtime Composition Implementation Plan
 
-> **Status:** Final hardening and authoritative CI gate.
+> **Status:** Durable runtime gate closed; mainline verification passed. Equity-investment domain is the next implementation phase.
 
 Architecture A remains locked. PostgreSQL is the lifecycle/ownership source of truth; Redis is delivery/scheduling only; RuntimeFacade is the framework-neutral application boundary; the Run FSM is exactly `QUEUED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
 
@@ -8,12 +8,16 @@ Completed: atomic Run/Event/Outbox transactions, idempotency replay/conflict, mo
 
 Final hardening tests cover checkpoint fencing, tool permission/idempotency/lost-fence behavior, Model Call intent/replay policy, and sync deadline handoff.
 
-Current final gate: obtain a fresh authoritative CI run on the exact latest HEAD and require repository typecheck, API typecheck/build, deployment boundary, 64/64 benchmark hard gate with zero invariant violations, full tests, PostgreSQL integration, Redis integration, Recovery E2E, sync-deadline E2E, and Compose benchmark/worker/migration smoke. Historical Run #354 executed `af44a90` and is not authoritative for the hardened branch.
+Authoritative branch gate: Run #370 passed on the exact hardened branch HEAD `9ff84c6546c271a8b9dd13a9e37d42eaef695523`. It covered repository typecheck, API typecheck/build, deployment boundary, 64/64 benchmark hard gate, full tests, Compose smoke, and the durable-runtime integration/recovery coverage.
+
+Mainline merge gate: PR #6 was merged as `02839ec3f012ba584131758597252157726b947e`. Main push Run #371 passed on that exact merge commit, with both `test` and `compose-smoke` jobs green. This closes the durable-runtime implementation gate on `main`.
 
 - [x] Durable implementation and crash/replay hardening
 - [x] Sync-deadline E2E
 - [x] Documentation checkpoint
-- [ ] Fresh CI on exact current HEAD
-- [ ] Record authoritative Run number and all green jobs
-- [ ] Mark PR #5 Ready only after the fresh gate is green
-- [ ] Begin equity-investment domain only after the durable-runtime gate is closed
+- [x] Fresh CI on exact hardened HEAD (Run #370)
+- [x] Record authoritative Run number and all green jobs
+- [x] PR #6 Ready and merged
+- [x] Post-merge main CI green (Run #371)
+- [x] Durable-runtime gate closed
+- [ ] Begin equity-investment domain implementation
