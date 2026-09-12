@@ -22,15 +22,9 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   recovery_lease_token TEXT,
   recovery_lease_expires_at TIMESTAMPTZ
 );
-
-CREATE INDEX IF NOT EXISTS agent_runs_claim_idx
-  ON agent_runs (state, run_id);
-CREATE INDEX IF NOT EXISTS agent_runs_lease_idx
-  ON agent_runs (lease_expires_at)
-  WHERE state = 'RUNNING';
-CREATE INDEX IF NOT EXISTS agent_runs_recovery_candidates_idx
-  ON agent_runs (next_attempt_at, run_id)
-  WHERE recovery_state IN ('IN_PROGRESS', 'FAILED_RETRYABLE');
+CREATE INDEX IF NOT EXISTS agent_runs_claim_idx ON agent_runs (state, run_id);
+CREATE INDEX IF NOT EXISTS agent_runs_lease_idx ON agent_runs (lease_expires_at) WHERE state = 'RUNNING';
+CREATE INDEX IF NOT EXISTS agent_runs_recovery_candidates_idx ON agent_runs (next_attempt_at, run_id) WHERE recovery_state IN ('IN_PROGRESS','FAILED_RETRYABLE');
 
 CREATE TABLE IF NOT EXISTS idempotency_keys (
   idempotency_key TEXT PRIMARY KEY,
@@ -38,7 +32,7 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
   run_id TEXT,
   response JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT idempotency_run_fk FOREIGN KEY (run_id) REFERENCES agent_runs(run_id)
+  CONSTRAINT idempotency_run_fk FOREIGN KEY (run_id) REFERENCES agent_runs(run_id) DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX IF NOT EXISTS idempotency_run_idx ON idempotency_keys (run_id);
 
@@ -75,7 +69,6 @@ CREATE TABLE IF NOT EXISTS outbox_events (
   claimed_by TEXT,
   next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_error TEXT,
-  -- Legacy benchmark/recovery fields retained for compatibility with existing fixtures.
   idempotency_key TEXT,
   event_type TEXT,
   tool_name TEXT,
@@ -83,9 +76,7 @@ CREATE TABLE IF NOT EXISTS outbox_events (
   actor_id TEXT,
   status TEXT NOT NULL DEFAULT 'PENDING'
 );
-CREATE INDEX IF NOT EXISTS outbox_events_pending_idx
-  ON outbox_events (next_attempt_at, created_at)
-  WHERE published_at IS NULL;
+CREATE INDEX IF NOT EXISTS outbox_events_pending_idx ON outbox_events (next_attempt_at, created_at) WHERE published_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS tool_calls (
   tool_call_id TEXT PRIMARY KEY,
@@ -116,8 +107,7 @@ CREATE TABLE IF NOT EXISTS tool_execution_idempotency (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (tenant_id, idempotency_key),
-  CONSTRAINT tool_execution_idempotency_status_check
-    CHECK (status IN ('IN_PROGRESS','SUCCEEDED','FAILED_RETRYABLE','FAILED_FINAL'))
+  CONSTRAINT tool_execution_idempotency_status_check CHECK (status IN ('IN_PROGRESS','SUCCEEDED','FAILED_RETRYABLE','FAILED_FINAL'))
 );
 
 CREATE TABLE IF NOT EXISTS model_calls (
@@ -132,7 +122,6 @@ CREATE TABLE IF NOT EXISTS model_calls (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ
 );
-
 CREATE TABLE IF NOT EXISTS model_attempts (
   attempt_id TEXT PRIMARY KEY,
   call_id TEXT NOT NULL REFERENCES model_calls(call_id),
