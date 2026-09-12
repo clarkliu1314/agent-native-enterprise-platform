@@ -23,6 +23,22 @@ describe('ModelExecutionService', () => {
     expect(store.createCall).toHaveBeenCalledWith(expect.objectContaining({ callId: 'call-1', requestHash: hashModelRequest(request), replayPolicy: 'REPLAYABLE' }));
   });
 
+  it('replays a durable successful call without invoking the provider again', async () => {
+    const store: ModelCallStore = {
+      getCall: vi.fn().mockResolvedValue({ status: 'SUCCEEDED', response: { text: 'cached' }, replayPolicy: 'REPLAYABLE', attemptCount: 1 }),
+      createCall: vi.fn().mockResolvedValue(),
+      createAttempt: vi.fn().mockResolvedValue(),
+      completeAttempt: vi.fn().mockResolvedValue(),
+      completeCall: vi.fn().mockResolvedValue(),
+    };
+    const provider: ModelProvider = { invoke: vi.fn() };
+    const service = new ModelExecutionService(store, provider);
+
+    await expect(service.execute({ callId: 'call-replay', runId: 'run-1', model: 'test-model', request, replayPolicy: 'REPLAYABLE' })).resolves.toEqual({ text: 'cached' });
+    expect(provider.invoke).not.toHaveBeenCalled();
+    expect(store.createAttempt).not.toHaveBeenCalled();
+  });
+
   it('records a failed non-replayable provider call and converts it to a durable non-replayable error', async () => {
     const store: ModelCallStore = {
       createCall: vi.fn().mockResolvedValue(),
