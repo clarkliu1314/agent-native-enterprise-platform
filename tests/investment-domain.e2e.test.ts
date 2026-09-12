@@ -43,8 +43,10 @@ describe('investment domain durable E2E', () => {
         actorId,
         idempotencyKey: `opportunity:${opportunityId}`,
       });
+      let expectedVersion = 1;
       for (const nextStage of ['SCREENING', 'DUE_DILIGENCE', 'IC_REVIEW'] as const) {
-        await service.advanceStage({ tenantId, opportunityId, actorId, nextStage, idempotencyKey: `stage:${opportunityId}:${nextStage}` });
+        await service.advanceStage({ tenantId, opportunityId, actorId, nextStage, expectedVersion, idempotencyKey: `stage:${opportunityId}:${nextStage}` });
+        expectedVersion += 1;
       }
 
       const first = await service.approve({
