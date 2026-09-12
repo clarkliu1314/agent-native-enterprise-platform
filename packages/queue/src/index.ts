@@ -15,6 +15,7 @@ export interface RedisStreamQueueOptions {
   group?: string;
   consumer?: string;
   blockMs?: number;
+  pendingIdleMs?: number;
 }
 
 export class RedisStreamPublisher implements QueuePublisher {
@@ -61,6 +62,7 @@ export class RedisStreamConsumer implements QueueConsumer {
   private readonly group: string;
   private readonly consumer: string;
   private readonly blockMs: number;
+  private readonly pendingIdleMs: number;
 
   constructor(
     private readonly options: RedisStreamQueueOptions,
@@ -71,6 +73,7 @@ export class RedisStreamConsumer implements QueueConsumer {
     this.group = options.group ?? 'runtime-workers';
     this.consumer = options.consumer ?? `consumer-${process.pid}`;
     this.blockMs = options.blockMs ?? 5_000;
+    this.pendingIdleMs = options.pendingIdleMs ?? 60_000;
   }
 
   async connect(): Promise<void> {
@@ -83,22 +86,30 @@ export class RedisStreamConsumer implements QueueConsumer {
   async consume(handler: (message: { topic: string; payload: unknown }) => Promise<void>): Promise<void> {
     await this.connect();
     for (;;) {
-      const streams = await this.discoverStreams();
-      for (const stream of streams) {
-        await this.ensureGroup(stream);
-        for (const message of await this.read(stream)) {
-          const topic = stream.slice(this.prefix.length);
-          try {
-            await handler({ topic, payload: JSON.parse(message.payload) });
-            await this.client.sendCommand(['XACK', stream, this.group, message.id]);
-          } catch {
-            // Leave failed deliveries pending for XAUTOCLAIM.
-          }
-        }
-        await this.reclaimPending(stream, handler);
-      }
+      await this.consumeOnce(handler);
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
+  }
+
+  async consumeOnce(handler: (message: { topic: string; payload: unknown }) => Promise<void>): Promise<number> {
+    await this.connect();
+    let processed = 0;
+    const streams = await this.discoverStreams();
+    for (const stream of streams) {
+      await this.ensureGroup(stream);
+      for (const message of await this.read(stream)) {
+        const topic = stream.slice(this.prefix.length);
+        try {
+          await handler({ topic, payload: JSON.parse(message.payload) });
+          await this.client.sendCommand(['XACK', stream, this.group, message.id]);
+          processed += 1;
+        } catch {
+          // Leave failed deliveries pending for XAUTOCLAIM.
+        }
+      }
+      processed += await this.reclaimPending(stream, handler);
+    }
+    return processed;
   }
 
   async close(): Promise<void> {
@@ -132,12 +143,13 @@ export class RedisStreamConsumer implements QueueConsumer {
   private async reclaimPending(
     stream: string,
     handler: (message: { topic: string; payload: unknown }) => Promise<void>,
-  ): Promise<void> {
+  ): Promise<number> {
     const result = await this.client.sendCommand([
-      'XAUTOCLAIM', stream, this.group, this.consumer, '60000', '0-0', 'COUNT', '10',
+      'XAUTOCLAIM', stream, this.group, this.consumer, String(this.pendingIdleMs), '0-0', 'COUNT', '10',
     ]) as unknown[];
     const entries = Array.isArray(result) && Array.isArray(result[1]) ? result[1] : [];
     const topic = stream.slice(this.prefix.length);
+    let processed = 0;
     for (const entry of entries) {
       if (!Array.isArray(entry) || entry.length < 2 || !Array.isArray(entry[1])) continue;
       const fields = entry[1] as unknown[];
@@ -147,10 +159,12 @@ export class RedisStreamConsumer implements QueueConsumer {
       try {
         await handler({ topic, payload: JSON.parse(fields[payloadIndex + 1] as string) });
         await this.client.sendCommand(['XACK', stream, this.group, id]);
+        processed += 1;
       } catch {
         // Keep pending for the next claim cycle.
       }
     }
+    return processed;
   }
 }
 
