@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgresDatabase, PostgresRuntimeRepositories } from './index';
 
@@ -5,8 +6,8 @@ const databaseUrl = process.env.DATABASE_URL;
 const describeIfDatabase = databaseUrl ? describe : describe.skip;
 
 const ids = {
-  run: `integration-run-${Date.now()}`,
-  blocker: `integration-blocker-${Date.now()}`,
+  run: `integration-run-${randomUUID()}`,
+  blocker: `integration-blocker-${randomUUID()}`,
 };
 
 describeIfDatabase('PostgresRuntimeRepositories', () => {
@@ -29,7 +30,7 @@ describeIfDatabase('PostgresRuntimeRepositories', () => {
   });
 
   it('rolls back Run, Event, and Idempotency admission when Event insertion fails', async () => {
-    const blockerEventId = `event-blocker-${Date.now()}`;
+    const blockerEventId = `event-blocker-${randomUUID()}`;
     await db.query(
       `INSERT INTO agent_runs (run_id, agent_id, state, input) VALUES ($1,'integration','QUEUED','{}'::jsonb)`,
       [ids.blocker],
