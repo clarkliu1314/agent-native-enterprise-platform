@@ -18,9 +18,7 @@ The Compose migration was aligned with the durable repository schema before the 
 
 ## Final verification gate
 
-Current branch HEAD is `145067ac1ca5137086a174a647f9ffd5630ef96c` at the last code/test checkpoint; subsequent documentation commits advance the branch and therefore the final authoritative CI must target the latest HEAD.
-
-The final CI must pass on one exact HEAD for: repository typecheck, API typecheck/build, deployment boundary, 64/64 benchmark hard gate, full test suite, PostgreSQL integration, Redis ACK/pending integration, Recovery E2E, sync-deadline E2E, and Compose benchmark/worker/migration smoke.
+The branch has been advanced through the implementation and documentation checkpoints. The final authoritative CI must target the exact latest HEAD and pass both CI jobs for: repository typecheck, API typecheck/build, deployment boundary, 64/64 benchmark hard gate, full test suite, PostgreSQL integration, Redis ACK/pending integration, Recovery E2E, sync-deadline E2E, and Compose benchmark/worker/migration smoke.
 
 Run #354 is historical and validated `af44a90`; it must not be used as the final-green claim for the hardened branch.
 
