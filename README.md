@@ -53,10 +53,14 @@ Missing required configuration fails closed; optional configuration is never rep
 
 Local Compose runs PostgreSQL, Redis, migrations, the durable-worker smoke test, and the benchmark smoke test. It does not fabricate a mock production API or LLM provider merely for deployment cosmetics.
 
-## Implementation plan
+## Implementation plans
 
-See `docs/superpowers/plans/2026-09-11-agent-native-enterprise-platform.md` and the Task 9 plan at `docs/superpowers/plans/2026-09-11-vercel-deployment-boundary.md`.
+- `docs/superpowers/plans/2026-09-11-agent-native-enterprise-platform.md` — overall platform plan
+- `docs/superpowers/plans/2026-09-12-equity-investment-domain.md` — completed Stage 10 equity-investment vertical slice and Stage 11 API boundary
+- `docs/superpowers/plans/2026-09-11-vercel-deployment-boundary.md` — Vercel deployment boundary
 
 ## Status
 
-Phase 9: Vercel deployment boundary established as a stateless, framework-neutral application boundary. Durable worker and platform-core semantics remain outside request-lifetime execution.
+**Stage 10 complete.** The durable platform foundation and equity-investment vertical slice are verified on main, including crash recovery and B17-B20 durability cases. Authoritative post-merge CI Run #437 is green.
+
+**Stage 11 next:** expose the existing durable investment capabilities through the stateless application/API boundary without duplicating runtime or persistence logic.
