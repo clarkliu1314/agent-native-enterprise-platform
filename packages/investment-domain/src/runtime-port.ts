@@ -3,6 +3,6 @@ export interface InvestmentWorkflowRuntime {
     runId: string;
     nextStep?: number;
   }>;
-  executeTurn(input: { runId: string; input: unknown }): Promise<{ status: 'CONTINUE' | 'WAITING' | 'COMPLETED' }>;
+  executeTurn(input: { runId: string; fencingToken: bigint; input: unknown }): Promise<{ status: 'CONTINUE' | 'WAITING' | 'COMPLETED' }>;
   resumeRun(input: { runId: string; input: unknown }): Promise<void>;
 }
