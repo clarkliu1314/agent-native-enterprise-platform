@@ -67,7 +67,7 @@ export class InvestmentApplicationService {
   constructor(private readonly uow: InvestmentUnitOfWork) {}
 
   async createOpportunity(command: CreateOpportunityCommand): Promise<InvestmentOpportunity> {
-    return this.uow.transaction(async ({ opportunities, events }) => {
+    return this.uow.transaction(async ({ opportunities, events, tx }) => {
       const existing = await opportunities.get(command.tenantId, command.opportunityId);
       if (existing) return existing;
 
@@ -85,7 +85,7 @@ export class InvestmentApplicationService {
         version: 1,
       };
       const persisted = await opportunities.create(opportunity);
-      await events.append({
+      await events.append(tx, {
         type: 'OpportunityCreated',
         eventId: randomUUID(),
         tenantId: command.tenantId,
@@ -100,12 +100,12 @@ export class InvestmentApplicationService {
   }
 
   async advanceStage(command: AdvanceOpportunityStageCommand): Promise<InvestmentOpportunity> {
-    return this.uow.transaction(async ({ opportunities, events }) => {
+    return this.uow.transaction(async ({ opportunities, events, tx }) => {
       const current = await opportunities.get(command.tenantId, command.opportunityId);
       if (!current) throw new Error(`Investment opportunity not found: ${command.opportunityId}`);
       const updated = advanceOpportunityStage(current, command.nextStage);
       await opportunities.save(updated, current.version);
-      await events.append({
+      await events.append(tx, {
         type: 'OpportunityStageAdvanced',
         eventId: randomUUID(),
         tenantId: command.tenantId,
@@ -137,7 +137,7 @@ export class InvestmentApplicationService {
       throw new Error(`Investment decision idempotency key mismatch: expected ${expectedKey}`);
     }
 
-    return this.uow.transaction(async ({ opportunities, decisions, events }) => {
+    return this.uow.transaction(async ({ opportunities, decisions, events, tx }) => {
       const existing = await decisions.getByIdempotencyKey(command.tenantId, command.idempotencyKey);
       if (existing) {
         const conflict = decisionConflict(existing, command);
@@ -182,7 +182,7 @@ export class InvestmentApplicationService {
             occurredAt: decision.createdAt,
             decisionId: persisted.decisionId,
           };
-      await events.append(event);
+      await events.append(tx, event);
       return persisted;
     });
   }
