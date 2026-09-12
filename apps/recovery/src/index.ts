@@ -6,10 +6,10 @@ import {
 import type { QueuePublisher, RuntimeAdapter } from '@agent-native/runtime';
 import { createRedisPublisher, type RedisStreamPublisher } from '@agent-native/queue';
 
-export interface RecoveryComposition {
+export interface RecoveryComposition<Q extends QueuePublisher = QueuePublisher> {
   database: PostgresDatabase;
   repositories: PostgresRuntimeRepositories;
-  queue: QueuePublisher;
+  queue: Q;
   coordinator: RecoveryCoordinator;
 }
 
@@ -28,9 +28,12 @@ export function composeRedisRecovery(
   adapter: RuntimeAdapter,
   redisUrl = process.env.REDIS_URL ?? 'redis://localhost:6379',
   leaseMs = 30_000,
-): RecoveryComposition & { queue: RedisStreamPublisher } {
+): RecoveryComposition<RedisStreamPublisher> {
   const queue = createRedisPublisher(redisUrl);
-  return composeRecovery(adapter, queue, leaseMs);
+  const database = new PostgresDatabase();
+  const repositories = new PostgresRuntimeRepositories(database);
+  const coordinator = new RecoveryCoordinator(repositories, adapter, leaseMs, queue);
+  return { database, repositories, queue, coordinator };
 }
 
 export async function recoverOnce(
