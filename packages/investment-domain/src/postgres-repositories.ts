@@ -58,6 +58,33 @@ export class PostgresInvestmentOpportunityRepository implements InvestmentOpport
     return result.rows[0] ? toOpportunity(result.rows[0]) : null;
   }
 
+  async create(opportunity: InvestmentOpportunity): Promise<InvestmentOpportunity> {
+    const result = await this.db.query<Record<string, unknown>>(
+      `INSERT INTO investment_opportunities
+         (opportunity_id, tenant_id, company_id, company_name, stage, status,
+          owner_id, created_at, updated_at, version)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING opportunity_id, tenant_id, company_id, company_name, stage, status,
+                 owner_id, created_at, updated_at, version`,
+      [
+        opportunity.opportunityId,
+        opportunity.tenantId,
+        opportunity.companyId,
+        opportunity.companyName,
+        opportunity.stage,
+        opportunity.status,
+        opportunity.ownerId,
+        opportunity.createdAt,
+        opportunity.updatedAt,
+        opportunity.version,
+      ],
+    );
+    if (!result.rows[0]) {
+      throw new Error(`Investment opportunity persistence returned no row for ${opportunity.opportunityId}`);
+    }
+    return toOpportunity(result.rows[0]);
+  }
+
   async save(opportunity: InvestmentOpportunity, expectedVersion: number): Promise<void> {
     const result = await this.db.query(
       `UPDATE investment_opportunities
