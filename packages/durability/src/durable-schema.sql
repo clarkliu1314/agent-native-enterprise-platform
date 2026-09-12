@@ -81,17 +81,26 @@ CREATE TABLE IF NOT EXISTS agent_events (
   UNIQUE (run_id, sequence)
 );
 
+-- Generic durable outbox. Agent events and tool-execution events share the same
+-- delivery boundary, so event_id is unique but not constrained to agent_events.
 CREATE TABLE IF NOT EXISTS outbox_events (
-  outbox_id TEXT PRIMARY KEY,
-  event_id TEXT NOT NULL UNIQUE REFERENCES agent_events(event_id),
-  topic TEXT NOT NULL,
+  outbox_id TEXT PRIMARY KEY DEFAULT ('outbox:' || gen_random_uuid()::text),
+  event_id TEXT NOT NULL UNIQUE DEFAULT ('event:' || gen_random_uuid()::text),
+  topic TEXT NOT NULL DEFAULT 'runtime',
   payload JSONB NOT NULL,
   published_at TIMESTAMPTZ,
   claimed_by TEXT,
   claimed_at TIMESTAMPTZ,
   attempts INTEGER NOT NULL DEFAULT 0,
   next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  idempotency_key TEXT,
+  event_type TEXT,
+  tool_name TEXT,
+  tenant_id TEXT,
+  actor_id TEXT,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  UNIQUE (tenant_id, idempotency_key)
 );
 CREATE INDEX IF NOT EXISTS outbox_publish_idx ON outbox_events (published_at, next_attempt_at, created_at);
 CREATE INDEX IF NOT EXISTS outbox_claim_idx ON outbox_events (claimed_at, published_at, next_attempt_at);
