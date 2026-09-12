@@ -14,22 +14,12 @@ export class InvestmentWorkflow {
     tenantId: string;
     opportunityId: string;
     idempotencyKey: string;
-    fencingToken: bigint;
   }): Promise<InvestmentWorkflowStartResult> {
-    const { fencingToken, ...admission } = input;
-    const run = await this.runtime.startRun(admission);
-    const startAt = Math.max(0, Math.min(run.nextStep ?? 0, WORKFLOW_STEPS.length));
+    const run = await this.runtime.startRun(input);
 
-    for (let index = startAt; index < WORKFLOW_STEPS.length; index += 1) {
-      const step = WORKFLOW_STEPS[index];
-      const result = await this.runtime.executeTurn({
-        runId: run.runId,
-        fencingToken,
-        input: { opportunityId: input.opportunityId, step },
-      });
-      if (result.status === 'WAITING' || result.status === 'COMPLETED') break;
-    }
-
+    // Admission is intentionally bounded: the API-facing workflow entry point
+    // must not claim a run or execute durable workflow steps. A worker performs
+    // execution only after obtaining the authoritative owner/fencing token.
     return { runId: run.runId, opportunityId: input.opportunityId };
   }
 
