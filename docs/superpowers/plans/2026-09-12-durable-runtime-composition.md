@@ -21,46 +21,27 @@
 
 ## Final hardening added
 
-- `test(runtime): lock checkpoint fencing contract`
-- `fix(runtime): fence checkpoint persistence writes`
-- `test(runtime): lock tool permission idempotency and fencing`
-- `test(runtime): cover in-flight side-effect replay boundary`
-- `fix(runtime): prevent replay of in-flight side effects`
-- `test(runtime): lock durable model call intent and replay policy`
-- `test(runtime): lock durable model replay semantics`
-- `fix(runtime): make model calls replay-safe by logical identity`
-- `fix(runtime): persist and replay logical model call state`
-- `test(e2e): prove sync deadline hands off to durable execution`
-- `fix(e2e): enforce a bounded sync budget in deadline coverage`
+- checkpoint fencing regression coverage
+- permission-before-effect and side-effect replay regression coverage
+- lost-fence result rejection coverage
+- durable Model Call intent ordering and logical-call replay coverage
+- sync-deadline E2E coverage
 
 ## Verification gate
 
-Current branch HEAD is `145067ac1ca5137086a174a647f9ffd5630ef96c`.
+The final authoritative CI must target the exact latest HEAD and pass both CI jobs for repository typecheck, API typecheck/build, deployment boundary, 64/64 benchmark hard gate, full test suite, PostgreSQL integration, Redis ACK/pending integration, Recovery E2E, sync-deadline E2E, and Compose benchmark/worker/migration smoke.
 
-Historical Run #354 is green but executed `af44a90`; it is not authoritative for the final hardening commits. The required final gate is a fresh CI run against the exact current HEAD and must pass both jobs:
+Run #354 is historical and executed `af44a90`; it is not authoritative for the final hardened branch.
 
-1. repository typecheck
-2. API typecheck
-3. API build
-4. deployment-boundary tests
-5. 64/64 benchmark hard gate with zero invariant violations
-6. full test suite
-7. PostgreSQL integration after `infra/compose/migrate.sql`
-8. Redis ACK/pending-message integration
-9. Compose benchmark smoke
-10. Compose worker smoke
-11. Compose migration smoke
-12. Recovery E2E and sync-deadline E2E
-
-The GitHub connector currently does not expose a workflow-dispatch write operation. A draft PR may therefore need a GitHub lifecycle event to cause the authoritative pull-request workflow to execute. **Do not merge the PR until the fresh current-HEAD workflow is green.**
+The GitHub connector currently does not expose a workflow-dispatch write operation. The PR lifecycle may therefore be required to cause the pull-request workflow to execute. **Do not merge until the fresh current-HEAD workflow is green.**
 
 ## Final workflow
 
 - [x] Durable implementation and crash/replay hardening.
 - [x] Sync-deadline E2E.
-- [x] Implementation-plan/documentation checkpoint.
+- [x] Documentation checkpoint.
 - [ ] Fresh CI on exact current HEAD.
-- [ ] Record authoritative Run number and all green jobs here.
+- [ ] Record authoritative Run number and all green jobs.
 - [ ] Only then mark PR #5 Ready.
 - [ ] Only after the durable-runtime gate is green, begin the equity-investment domain.
 
