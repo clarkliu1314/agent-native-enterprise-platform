@@ -4,10 +4,10 @@ import {
   type BenchmarkCase,
 } from './index';
 
-export const investmentBenchmarkCaseIds = ['I01', 'I02', 'I03', 'I04'] as const;
+export const investmentBenchmarkCaseIds = ['B17', 'B18', 'B19', 'B20'] as const;
 export type InvestmentBenchmarkCaseId = (typeof investmentBenchmarkCaseIds)[number];
 
-export type InvestmentBenchmarkCase = Omit<BenchmarkCase, 'id'> & {
+export type InvestmentBenchmarkCase = BenchmarkCase & {
   id: InvestmentBenchmarkCaseId;
 };
 
@@ -44,7 +44,7 @@ function defineInvestmentCase(
 
 export const investmentBenchmarkCases: readonly InvestmentBenchmarkCase[] = [
   defineInvestmentCase(
-    'I01',
+    'B17',
     'investment-decision-idempotency',
     'RUNNING',
     'NONE',
@@ -68,7 +68,7 @@ export const investmentBenchmarkCases: readonly InvestmentBenchmarkCase[] = [
     ['second decision row', 'second decision event', 'second outbox event', 'conflicting result replayed'],
   ),
   defineInvestmentCase(
-    'I02',
+    'B18',
     'investment-approval-replay',
     'WAITING',
     'NONE',
@@ -92,7 +92,7 @@ export const investmentBenchmarkCases: readonly InvestmentBenchmarkCase[] = [
     ['new run id after restart', 'duplicate decision', 'duplicate approval event', 'approval state held only in memory'],
   ),
   defineInvestmentCase(
-    'I03',
+    'B19',
     'investment-crash-recovery',
     'RECOVERING',
     'IN_PROGRESS',
@@ -118,7 +118,7 @@ export const investmentBenchmarkCases: readonly InvestmentBenchmarkCase[] = [
     ['replayed completed step with a second effect', 'new run created for recovery', 'duplicate decision', 'lost outbox intent'],
   ),
   defineInvestmentCase(
-    'I04',
+    'B20',
     'investment-outbox-duplication',
     'RUNNING',
     'NONE',
