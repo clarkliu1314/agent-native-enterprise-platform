@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { InvestmentDecision } from './investment-decision';
 import type { InvestmentDomainEvent } from './events';
 import type { InvestmentOpportunityRepository, InvestmentDecisionRepository } from './repositories';
-import { InvestmentApplicationService, type InvestmentUnitOfWork } from './application-service';
+import { InvestmentApplicationService, type InvestmentUnitOfWork, type InvestmentSqlClient } from './application-service';
 import type { InvestmentOpportunity } from './opportunity';
 
 const opportunity: InvestmentOpportunity = {
@@ -53,20 +53,23 @@ class FakeDecisionRepository implements InvestmentDecisionRepository {
   }
 }
 
+const fakeTx: InvestmentSqlClient = {
+  async query() {
+    return { rows: [], rowCount: 0 };
+  },
+};
+
 class FakeUnitOfWork implements InvestmentUnitOfWork {
   readonly opportunities = new FakeOpportunityRepository();
   readonly decisions = new FakeDecisionRepository();
   readonly events: InvestmentDomainEvent[] = [];
 
-  async transaction<T>(work: (context: {
-    opportunities: FakeOpportunityRepository;
-    decisions: FakeDecisionRepository;
-    events: { append(event: InvestmentDomainEvent): Promise<void> };
-  }) => Promise<T>): Promise<T> {
+  async transaction<T>(work: Parameters<InvestmentUnitOfWork['transaction']>[0]): Promise<T> {
     return work({
+      tx: fakeTx,
       opportunities: this.opportunities,
       decisions: this.decisions,
-      events: { append: async (event) => { this.events.push(event); } },
+      events: { append: async (_tx, event) => { this.events.push(event); } },
     });
   }
 }
