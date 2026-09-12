@@ -3,6 +3,7 @@ import type { InvestmentOpportunity } from './opportunity';
 
 export interface InvestmentOpportunityRepository {
   get(tenantId: string, opportunityId: string): Promise<InvestmentOpportunity | null>;
+  create(opportunity: InvestmentOpportunity): Promise<InvestmentOpportunity>;
   save(opportunity: InvestmentOpportunity, expectedVersion: number): Promise<void>;
 }
 

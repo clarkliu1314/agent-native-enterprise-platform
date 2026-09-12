@@ -59,6 +59,38 @@ describe('investment PostgreSQL persistence contract', () => {
     expect(db.calls[0]?.sql).toContain('investment_opportunities');
   });
 
+  it('persists a newly created opportunity and returns it', async () => {
+    const db = sqlClient([{ rows: [{
+      opportunity_id: opportunity.opportunityId,
+      tenant_id: opportunity.tenantId,
+      company_id: opportunity.companyId,
+      company_name: opportunity.companyName,
+      stage: opportunity.stage,
+      status: opportunity.status,
+      owner_id: opportunity.ownerId,
+      created_at: opportunity.createdAt,
+      updated_at: opportunity.updatedAt,
+      version: opportunity.version,
+    }], rowCount: 1 }]);
+    const repository: InvestmentOpportunityRepository = new PostgresInvestmentOpportunityRepository(db);
+
+    await expect(repository.create(opportunity)).resolves.toEqual(opportunity);
+    expect(db.calls[0]?.sql).toContain('INSERT INTO investment_opportunities');
+    expect(db.calls[0]?.sql).toContain('RETURNING');
+    expect(db.calls[0]?.params).toEqual([
+      opportunity.opportunityId,
+      opportunity.tenantId,
+      opportunity.companyId,
+      opportunity.companyName,
+      opportunity.stage,
+      opportunity.status,
+      opportunity.ownerId,
+      opportunity.createdAt,
+      opportunity.updatedAt,
+      opportunity.version,
+    ]);
+  });
+
   it('uses optimistic version matching when saving an opportunity', async () => {
     const db = sqlClient([{ rows: [], rowCount: 1 }]);
     const repository: InvestmentOpportunityRepository = new PostgresInvestmentOpportunityRepository(db);
