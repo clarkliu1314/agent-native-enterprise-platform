@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { composeApi } from '../apps/api/src/composition';
+import { createDurableHandler } from '../apps/api/src/durable-handler';
 import type { RuntimeAdapter } from '../packages/runtime/src/ports';
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeIfDatabase = databaseUrl ? describe : describe.skip;
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describeIfDatabase('durable runtime sync deadline', () => {
   const adapter: RuntimeAdapter = {
@@ -23,11 +22,11 @@ describeIfDatabase('durable runtime sync deadline', () => {
   };
 
   const api = composeApi(adapter);
+  const handler = createDurableHandler(api.runtime, { syncBudgetMs: 1, owner: 'e2e-deadline' });
   let runId = '';
 
   beforeAll(async () => {
-    await sleep(1);
-    const response = await api.handler(new Request('https://example.test/runs', {
+    const response = await handler(new Request('https://example.test/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'idempotency-key': `deadline-${Date.now()}` },
       body: JSON.stringify({ agentId: 'deadline-agent', input: { task: 'slow' }, executionMode: 'sync' }),
@@ -49,7 +48,7 @@ describeIfDatabase('durable runtime sync deadline', () => {
   });
 
   it('leaves durable execution running after the request deadline expires', async () => {
-    const response = await api.handler(new Request(`https://example.test/runs/${encodeURIComponent(runId)}`, { method: 'GET' }));
+    const response = await handler(new Request(`https://example.test/runs/${encodeURIComponent(runId)}`, { method: 'GET' }));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ runId, state: 'RUNNING' });
   });
