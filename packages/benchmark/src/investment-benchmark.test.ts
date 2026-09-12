@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { benchmarkAdapters, investmentBenchmarkCases } from './investment-benchmark';
+import { benchmarkAdapters } from './index';
+import { investmentBenchmarkCases } from './investment-benchmark';
 
 describe('investment durability benchmark', () => {
   it('defines the four Stage 10 durability cases', () => {
     expect(investmentBenchmarkCases.map((testCase) => testCase.id)).toEqual([
-      'B17',
-      'B18',
-      'B19',
-      'B20',
+      'I01',
+      'I02',
+      'I03',
+      'I04',
     ]);
   });
 
