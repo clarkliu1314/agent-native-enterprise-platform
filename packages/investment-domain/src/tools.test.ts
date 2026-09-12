@@ -39,9 +39,11 @@ describe('investment tools and policy', () => {
   it('requires explicit authorization for side-effecting tools', async () => {
     const tools = createInvestmentTools();
 
-    await expect(tools.advanceOpportunityStage({ ...context, nextStage: 'SCREENING' })).rejects.toThrow(
-      'Tool permission denied',
-    );
+    await expect(tools.advanceOpportunityStage({
+      ...context,
+      nextStage: 'SCREENING',
+      idempotencyKey: 'stage:opp-1:screening',
+    })).rejects.toThrow('Tool permission denied');
     await expect(tools.createInvestmentDecision({
       ...context,
       decisionCycle: 1,
@@ -58,9 +60,7 @@ describe('investment tools and policy', () => {
       approve: async (input: unknown) => { calls.push(['approve', input]); return { ok: true }; },
       reject: async (input: unknown) => { calls.push(['reject', input]); return { ok: true }; },
     };
-    const authorization = {
-      authorize: async () => true,
-    };
+    const authorization = { authorize: async () => true };
     const tools = createInvestmentTools(applicationService as never, authorization);
 
     await tools.advanceOpportunityStage({ ...context, nextStage: 'SCREENING', idempotencyKey: 'stage:opp-1:screening' });
