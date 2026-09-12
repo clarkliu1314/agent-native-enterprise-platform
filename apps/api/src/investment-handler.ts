@@ -14,8 +14,9 @@ export function createInvestmentHandler(application: InvestmentApiApplication) {
     const tenantId = request.headers.get('x-tenant-id');
     const actorId = request.headers.get('x-actor-id');
     const idempotencyKey = request.headers.get('idempotency-key');
+    const requiresIdempotency = method === 'POST' && !url.pathname.match(/^\/investment-workflows\/[^/]+\/resume$/);
 
-    if (method !== 'GET' && (!tenantId || !idempotencyKey)) {
+    if (method !== 'GET' && (!tenantId || (requiresIdempotency && !idempotencyKey))) {
       return Response.json({ error: 'invalid_request' }, { status: 400 });
     }
 
