@@ -46,9 +46,8 @@ export function createInvestmentTools(
     async createInvestmentDecision(input) {
       await requireToolPermission('investment_decision.create', input, authorization);
       if (!applicationService) throw new Error('Investment application service is required');
-      return input.recommendation === 'APPROVE'
-        ? applicationService.approve(input)
-        : applicationService.reject(input);
+      if (input.recommendation === 'APPROVE') return applicationService.approve(input);
+      return applicationService.reject(input);
     },
   };
 }
