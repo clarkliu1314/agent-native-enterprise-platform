@@ -15,14 +15,14 @@ describe('InvestmentWorkflow', () => {
     };
     const workflow = new InvestmentWorkflow(runtime);
 
-    await expect(workflow.start({ tenantId: 'tenant-1', opportunityId: 'opp-1', idempotencyKey: 'workflow:opp-1' }))
+    await expect(workflow.start({ tenantId: 'tenant-1', opportunityId: 'opp-1', idempotencyKey: 'workflow:opp-1', fencingToken: 17n }))
       .resolves.toEqual({ runId: 'run-1', opportunityId: 'opp-1' });
 
     expect(runtime.startRun).toHaveBeenCalledWith({ tenantId: 'tenant-1', opportunityId: 'opp-1', idempotencyKey: 'workflow:opp-1' });
-    expect(runtime.executeTurn).toHaveBeenNthCalledWith(1, { runId: 'run-1', input: { opportunityId: 'opp-1', step: 'research' } });
-    expect(runtime.executeTurn).toHaveBeenNthCalledWith(2, { runId: 'run-1', input: { opportunityId: 'opp-1', step: 'due_diligence' } });
-    expect(runtime.executeTurn).toHaveBeenNthCalledWith(3, { runId: 'run-1', input: { opportunityId: 'opp-1', step: 'analysis' } });
-    expect(runtime.executeTurn).toHaveBeenNthCalledWith(4, { runId: 'run-1', input: { opportunityId: 'opp-1', step: 'recommendation' } });
+    expect(runtime.executeTurn).toHaveBeenNthCalledWith(1, { runId: 'run-1', fencingToken: 17n, input: { opportunityId: 'opp-1', step: 'research' } });
+    expect(runtime.executeTurn).toHaveBeenNthCalledWith(2, { runId: 'run-1', fencingToken: 17n, input: { opportunityId: 'opp-1', step: 'due_diligence' } });
+    expect(runtime.executeTurn).toHaveBeenNthCalledWith(3, { runId: 'run-1', fencingToken: 17n, input: { opportunityId: 'opp-1', step: 'analysis' } });
+    expect(runtime.executeTurn).toHaveBeenNthCalledWith(4, { runId: 'run-1', fencingToken: 17n, input: { opportunityId: 'opp-1', step: 'recommendation' } });
     expect(runtime.executeTurn).toHaveBeenCalledTimes(4);
   });
 

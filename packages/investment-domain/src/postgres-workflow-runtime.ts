@@ -29,20 +29,14 @@ function parseState(input: unknown): WorkflowState {
   };
 }
 
-/**
- * PostgreSQL-backed investment workflow runtime.
- *
- * The durable checkpoint and the next-step cursor are committed in one transaction.
- * A crash before that transaction commits leaves the current step retryable; a crash
- * after it commits resumes from the following step. No process-local cursor is used.
- */
+/** PostgreSQL-backed workflow runtime. Admission is durable; execution is fenced. */
 export class PostgresInvestmentWorkflowRuntime implements InvestmentWorkflowRuntime {
   constructor(private readonly db: InvestmentWorkflowDatabase) {}
 
   async startRun(input: { tenantId: string; opportunityId: string; idempotencyKey: string }): Promise<{ runId: string; nextStep: number }> {
     return this.db.transaction(async (tx) => {
-      const existing = await tx.query<{ run_id: string; input: unknown; metadata: unknown }>(
-        `SELECT r.run_id, r.input, r.metadata
+      const existing = await tx.query<{ run_id: string; metadata: unknown }>(
+        `SELECT r.run_id, r.metadata
          FROM idempotency_keys i
          JOIN agent_runs r ON r.run_id=i.run_id
          WHERE i.idempotency_key=$1`,
@@ -54,20 +48,12 @@ export class PostgresInvestmentWorkflowRuntime implements InvestmentWorkflowRunt
       }
 
       const runId = `investment:${randomUUID()}`;
-      const state: WorkflowState = {
-        nextStep: 0,
-        tenantId: input.tenantId,
-        opportunityId: input.opportunityId,
-      };
+      const state: WorkflowState = { nextStep: 0, tenantId: input.tenantId, opportunityId: input.opportunityId };
       await tx.query(
         `INSERT INTO agent_runs
            (run_id, agent_id, state, input, version, metadata)
-         VALUES ($1,'equity-investment','RUNNING',$2::jsonb,0,$3::jsonb)`,
-        [
-          runId,
-          JSON.stringify({ tenantId: input.tenantId, opportunityId: input.opportunityId }),
-          JSON.stringify(state),
-        ],
+         VALUES ($1,'equity-investment','QUEUED',$2::jsonb,0,$3::jsonb)`,
+        [runId, JSON.stringify({ tenantId: input.tenantId, opportunityId: input.opportunityId }), JSON.stringify(state)],
       );
       await tx.query(
         `INSERT INTO idempotency_keys (idempotency_key, command_hash, run_id)
@@ -78,10 +64,10 @@ export class PostgresInvestmentWorkflowRuntime implements InvestmentWorkflowRunt
     });
   }
 
-  async executeTurn(input: { runId: string; input: unknown }): Promise<{ status: 'CONTINUE' | 'WAITING' | 'COMPLETED' }> {
+  async executeTurn(input: { runId: string; fencingToken: bigint; input: unknown }): Promise<{ status: 'CONTINUE' | 'WAITING' | 'COMPLETED' }> {
     return this.db.transaction(async (tx) => {
-      const current = await tx.query<{ metadata: unknown; state: string; version: number }>(
-        `SELECT metadata, state, version
+      const current = await tx.query<{ metadata: unknown; state: string; version: number; fencing_token: bigint }>(
+        `SELECT metadata, state, version, fencing_token
          FROM agent_runs
          WHERE run_id=$1
          FOR UPDATE`,
@@ -90,6 +76,11 @@ export class PostgresInvestmentWorkflowRuntime implements InvestmentWorkflowRunt
       if (!current.rows[0]) throw new Error(`Investment workflow run not found: ${input.runId}`);
       if (current.rows[0].state === 'WAITING') return { status: 'WAITING' };
       if (current.rows[0].state === 'COMPLETED' || current.rows[0].state === 'SUCCEEDED') return { status: 'COMPLETED' };
+
+      const storedToken = BigInt(current.rows[0].fencing_token ?? 0);
+      if (current.rows[0].state === 'RUNNING' && storedToken !== input.fencingToken) {
+        throw new Error(`Investment workflow fencing token mismatch: ${input.runId}`);
+      }
 
       const state = parseState(current.rows[0].metadata);
       const payload = (input.input ?? {}) as { step?: string; opportunityId?: string };
@@ -107,15 +98,15 @@ export class PostgresInvestmentWorkflowRuntime implements InvestmentWorkflowRunt
       await tx.query(
         `INSERT INTO checkpoints
            (checkpoint_id, run_id, sequence, fencing_token, adapter, adapter_version, schema_version, payload)
-         VALUES ($1,$2,$3,0,'investment-workflow','1',1,$4::bytea)`,
-        [`checkpoint:${randomUUID()}`, input.runId, sequence, Buffer.from(JSON.stringify(nextState))],
+         VALUES ($1,$2,$3,$4,'investment-workflow','1',1,$5::bytea)`,
+        [`checkpoint:${randomUUID()}`, input.runId, sequence, input.fencingToken, Buffer.from(JSON.stringify(nextState))],
       );
       const nextStatus = nextStep >= STEPS.length ? 'WAITING' : 'RUNNING';
       await tx.query(
         `UPDATE agent_runs
-         SET metadata=$2::jsonb, state=$3, version=$4
+         SET metadata=$2::jsonb, state=$3, version=$4, fencing_token=$5
          WHERE run_id=$1`,
-        [input.runId, JSON.stringify(nextState), nextStatus, sequence],
+        [input.runId, JSON.stringify(nextState), nextStatus, sequence, input.fencingToken],
       );
       return { status: nextStatus === 'WAITING' ? 'WAITING' : 'CONTINUE' };
     });
