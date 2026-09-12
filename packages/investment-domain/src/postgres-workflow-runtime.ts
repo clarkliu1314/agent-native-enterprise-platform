@@ -9,25 +9,17 @@ export interface InvestmentWorkflowDatabase {
 
 const STEPS = ['research', 'due_diligence', 'analysis', 'recommendation'] as const;
 
-type WorkflowMetadata = {
-  tenantId: string;
-  opportunityId: string;
-  nextStep: number;
-};
+type WorkflowMetadata = { tenantId: string; opportunityId: string; nextStep: number };
 
 /**
- * Runtime adapter for the investment workflow. DurableRuntimeService owns
- * admission, claim, lease and fencing; this adapter owns only business-step
- * progression behind an already-authoritative claim.
+ * Runtime adapter for investment business-step progression. The durable
+ * runtime remains the authority for admission, claim, lease and fencing.
  */
 export class InvestmentWorkflowRuntimeAdapter implements RuntimeAdapter {
   readonly name = 'investment-workflow';
   readonly version = '1';
 
-  constructor(
-    private readonly database: InvestmentWorkflowDatabase,
-    private readonly repositories: PostgresRuntimeRepositories,
-  ) {}
+  constructor(private readonly database: InvestmentWorkflowDatabase, private readonly repositories: PostgresRuntimeRepositories) {}
 
   async run(input: { run: RunView; signal?: AbortSignal }): Promise<{ kind: 'SUCCEEDED' | 'WAITING' | 'FAILED'; output?: unknown }> {
     const metadata = input.run.metadata as Partial<WorkflowMetadata>;
@@ -42,15 +34,11 @@ export class InvestmentWorkflowRuntimeAdapter implements RuntimeAdapter {
       nextStep += 1;
       const state = { tenantId, opportunityId, nextStep } satisfies WorkflowMetadata;
       const checkpointSequence = BigInt(input.run.attempt) * 100n + BigInt(nextStep);
-
       const updated = await this.database.query(
-        `UPDATE agent_runs
-         SET metadata=$2::jsonb, version=version+1
-         WHERE run_id=$1 AND state='RUNNING' AND fencing_token=$3::bigint`,
+        `UPDATE agent_runs SET metadata=$2::jsonb, version=version+1 WHERE run_id=$1 AND state='RUNNING' AND fencing_token=$3::bigint`,
         [input.run.runId, JSON.stringify(state), input.run.fencingToken.toString()],
       );
       if (updated.rowCount !== 1) throw new Error(`Investment workflow fenced write rejected: ${input.run.runId}`);
-
       await this.repositories.saveCheckpoint({
         checkpointId: `${input.run.runId}:checkpoint:${checkpointSequence}`,
         runId: input.run.runId,
@@ -67,13 +55,8 @@ export class InvestmentWorkflowRuntimeAdapter implements RuntimeAdapter {
     return { kind: 'WAITING', output: { opportunityId, nextStep } };
   }
 
-  serializeCheckpoint(state: unknown): Uint8Array {
-    return Buffer.from(JSON.stringify(state));
-  }
-
-  deserializeCheckpoint(payload: Uint8Array): unknown {
-    return JSON.parse(Buffer.from(payload).toString('utf8'));
-  }
+  serializeCheckpoint(state: unknown): Uint8Array { return Buffer.from(JSON.stringify(state)); }
+  deserializeCheckpoint(payload: Uint8Array): unknown { return JSON.parse(Buffer.from(payload).toString('utf8')); }
 }
 
 /** Investment facade over the authoritative durable runtime service. */
@@ -87,7 +70,7 @@ export class PostgresInvestmentWorkflowRuntime implements InvestmentWorkflowRunt
     });
   }
 
-  async createRun(input: { tenantId: string; opportunityId: string; idempotencyKey: string }): Promise<{ run: RunView; replayed: boolean }> {
+  createRun(input: { tenantId: string; opportunityId: string; idempotencyKey: string }): Promise<{ run: RunView; replayed: boolean }> {
     return this.runtime.createRun({
       agentId: 'equity-investment',
       input: { tenantId: input.tenantId, opportunityId: input.opportunityId },
@@ -97,11 +80,6 @@ export class PostgresInvestmentWorkflowRuntime implements InvestmentWorkflowRunt
     });
   }
 
-  approveRun(runId: string, approvalId: string): Promise<RunView> {
-    return this.runtime.approveRun(runId, approvalId);
-  }
-
-  getRun(runId: string): Promise<RunView> {
-    return this.runtime.getRun(runId);
-  }
+  approveRun(runId: string, approvalId: string): Promise<RunView> { return this.runtime.approveRun(runId, approvalId); }
+  getRun(runId: string): Promise<RunView> { return this.runtime.getRun(runId); }
 }
