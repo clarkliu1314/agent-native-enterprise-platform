@@ -6,7 +6,7 @@ function application(): InvestmentApiApplication {
     createOpportunity: vi.fn().mockResolvedValue({ opportunityId: 'opp-1', tenantId: 'tenant-a', stage: 'DRAFT', version: 1 }),
     advanceStage: vi.fn().mockResolvedValue({ opportunityId: 'opp-1', tenantId: 'tenant-a', stage: 'SCREENING', version: 2 }),
     submitDecision: vi.fn().mockResolvedValue({ decisionId: 'decision-1', opportunityId: 'opp-1', recommendation: 'APPROVE', decisionCycle: 1 }),
-    startWorkflow: vi.fn().mockResolvedValue({ runId: 'run-1', nextStep: 0 }),
+    startWorkflow: vi.fn().mockResolvedValue({ runId: 'run-1', opportunityId: 'opp-1' }),
     getWorkflow: vi.fn().mockResolvedValue({ runId: 'run-1', state: 'WAITING', nextStep: 4 }),
     resumeWorkflow: vi.fn().mockResolvedValue(undefined),
   };
