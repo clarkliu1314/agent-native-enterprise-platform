@@ -1,52 +1,40 @@
 import { describe, expect, it } from 'vitest';
+import type { TransactionClient } from '@agent-native/runtime';
 import { PostgresInvestmentWorkflowRuntime, type InvestmentWorkflowDatabase } from './postgres-workflow-runtime';
 
 class FakeDatabase implements InvestmentWorkflowDatabase {
-  runs = new Map<string, { state: string; version: number; metadata: unknown; fencingToken: bigint }>();
+  runs = new Map<string, { runId: string; agentId: string; state: string; attempt: number; createdAt: string; metadata: unknown; fencingToken: bigint }>();
   idempotency = new Map<string, string>();
-  checkpoints: Array<{ runId: string; sequence: bigint; fencingToken: bigint; payload: Buffer }> = [];
-  private nextRunId = 0;
+  private sequence = 0;
 
   private execute<T = Record<string, unknown>>(sql: string, params: readonly unknown[] = []): { rows: T[]; rowCount: number } {
     if (sql.includes('FROM idempotency_keys')) {
       const runId = this.idempotency.get(String(params[0]));
-      if (!runId) return { rows: [], rowCount: 0 };
-      const run = this.runs.get(runId)!;
-      return { rows: [{ run_id: runId, metadata: run.metadata }] as T[], rowCount: 1 };
-    }
-    if (sql.includes('INSERT INTO agent_runs')) {
-      const runId = String(params[0]);
-      this.runs.set(runId, { state: 'QUEUED', version: 0, fencingToken: 0n, metadata: JSON.parse(String(params[2])) });
-      return { rows: [], rowCount: 1 };
+      return runId ? { rows: [{ run_id: runId, command_hash: 'hash' }] as T[], rowCount: 1 } : { rows: [], rowCount: 0 };
     }
     if (sql.includes('INSERT INTO idempotency_keys')) {
       this.idempotency.set(String(params[0]), String(params[2]));
       return { rows: [], rowCount: 1 };
     }
-    if (sql.includes('SELECT metadata, state, version, fencing_token')) {
+    if (sql.includes('INSERT INTO agent_runs')) {
+      const runId = String(params[0]);
+      const agentId = String(params[1]);
+      const metadata = JSON.parse(String(params[3]));
+      const createdAt = new Date().toISOString();
+      this.runs.set(runId, { runId, agentId, state: 'QUEUED', attempt: 0, createdAt, metadata, fencingToken: 0n });
+      return {
+        rows: [{ run_id: runId, agent_id: agentId, state: 'QUEUED', input: JSON.parse(String(params[2])), metadata, fencing_token: 0n, attempt: 0, created_at: createdAt }] as T[],
+        rowCount: 1,
+      };
+    }
+    if (sql.includes('SELECT * FROM agent_runs')) {
       const run = this.runs.get(String(params[0]));
       return run
-        ? { rows: [{ metadata: run.metadata, state: run.state, version: run.version, fencing_token: run.fencingToken }] as T[], rowCount: 1 }
+        ? { rows: [{ run_id: run.runId, agent_id: run.agentId, state: run.state, input: {}, metadata: run.metadata, fencing_token: run.fencingToken, attempt: run.attempt, created_at: run.createdAt }] as T[], rowCount: 1 }
         : { rows: [], rowCount: 0 };
     }
-    if (sql.includes('INSERT INTO checkpoints')) {
-      this.checkpoints.push({ runId: String(params[1]), sequence: BigInt(params[2] as bigint), fencingToken: BigInt(params[3] as bigint), payload: Buffer.from(params[4] as Buffer) });
-      return { rows: [], rowCount: 1 };
-    }
-    if (sql.includes('UPDATE agent_runs') && sql.includes("state='RUNNING'") && sql.includes('fencing_token')) {
-      const run = this.runs.get(String(params[0]));
-      if (!run || run.state !== 'RUNNING' || run.fencingToken !== BigInt(params[2] as string)) return { rows: [], rowCount: 0 };
-      run.metadata = JSON.parse(String(params[1]));
-      run.version += 1;
-      return { rows: [], rowCount: 1 };
-    }
-    if (sql.includes("state='COMPLETED'")) {
-      const run = this.runs.get(String(params[0]));
-      if (!run || run.state !== 'WAITING') return { rows: [], rowCount: 0 };
-      run.state = 'COMPLETED';
-      run.version += 1;
-      return { rows: [], rowCount: 1 };
-    }
+    if (sql.includes('INSERT INTO agent_events')) return { rows: [{ event_id: String(params[0]), run_id: String(params[1]), sequence: 1n, type: 'RUN_CREATED', payload: {}, created_at: new Date().toISOString() }] as T[], rowCount: 1 };
+    if (sql.includes('INSERT INTO outbox_events')) return { rows: [], rowCount: 1 };
     throw new Error(`Unhandled SQL: ${sql}`);
   }
 
@@ -54,8 +42,13 @@ class FakeDatabase implements InvestmentWorkflowDatabase {
     return this.execute<T>(sql, params);
   }
 
-  async transaction<T>(work: (tx: { query<T = Record<string, unknown>>(sql: string, params?: readonly unknown[]): Promise<{ rows: T[]; rowCount: number }> }) => Promise<T>): Promise<T> {
-    return work({ query: <T = Record<string, unknown>>(sql: string, params: readonly unknown[] = []) => this.query<T>(sql, params) });
+  async transaction<T>(work: (tx: TransactionClient) => Promise<T>): Promise<T> {
+    const tx: TransactionClient = {
+      query: <T = Record<string, unknown>>(sql: string, params?: readonly unknown[]) => this.query<T>(sql, params),
+      commit: async () => undefined,
+      rollback: async () => undefined,
+    };
+    return work(tx);
   }
 }
 
@@ -90,6 +83,6 @@ describe('PostgresInvestmentWorkflowRuntime', () => {
     const admitted = await runtime.createRun({ tenantId: 'tenant-1', opportunityId: 'opp-3', idempotencyKey: 'workflow:opp-3' });
 
     await expect(runtime.getRun(admitted.run.runId)).resolves.toMatchObject({ runId: admitted.run.runId, state: 'QUEUED' });
-    await expect(runtime.approveRun(admitted.run.runId, 'approval-1')).rejects.toThrow();
+    await expect(runtime.approveRun(admitted.run.runId, 'approval-1')).rejects.toThrow('Run is not waiting for approval');
   });
 });
