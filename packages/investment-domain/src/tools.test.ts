@@ -51,6 +51,33 @@ describe('investment tools and policy', () => {
     })).rejects.toThrow('Tool permission denied');
   });
 
+  it('delegates authorized side effects to the application service with the same idempotency key', async () => {
+    const calls: unknown[] = [];
+    const applicationService = {
+      advanceStage: async (input: unknown) => { calls.push(['advance', input]); return { ok: true }; },
+      approve: async (input: unknown) => { calls.push(['approve', input]); return { ok: true }; },
+      reject: async (input: unknown) => { calls.push(['reject', input]); return { ok: true }; },
+    };
+    const authorization = {
+      authorize: async () => true,
+    };
+    const tools = createInvestmentTools(applicationService as never, authorization);
+
+    await tools.advanceOpportunityStage({ ...context, nextStage: 'SCREENING', idempotencyKey: 'stage:opp-1:screening' });
+    await tools.createInvestmentDecision({
+      ...context,
+      decisionCycle: 1,
+      recommendation: 'APPROVE',
+      rationale: 'Meets IC criteria',
+      idempotencyKey: 'investment-decision:opp-1:1',
+    });
+
+    expect(calls).toEqual([
+      ['advance', { ...context, nextStage: 'SCREENING', idempotencyKey: 'stage:opp-1:screening' }],
+      ['approve', { ...context, decisionCycle: 1, recommendation: 'APPROVE', rationale: 'Meets IC criteria', idempotencyKey: 'investment-decision:opp-1:1' }],
+    ]);
+  });
+
   it('classifies side-effecting tools and preserves business idempotency keys', () => {
     expect(getToolPolicy('opportunity.advance_stage')).toEqual({ effect: 'SIDE_EFFECTING', permission: 'investment.opportunity.write' });
     expect(getToolPolicy('investment_decision.create')).toEqual({ effect: 'SIDE_EFFECTING', permission: 'investment.decision.write' });
