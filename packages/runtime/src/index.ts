@@ -5,6 +5,7 @@ export { PostgresDatabase } from './postgres-client';
 export { PostgresRuntimeRepositories } from './postgres-runtime-repositories';
 export { PostgresToolRepositories } from './postgres-tool-repositories';
 export { PostgresOutboxRepository } from './postgres-outbox-repository';
+export { PostgresModelCallStore } from './postgres-model-call-store';
 export { OutboxPublisher } from './outbox-publisher';
 export { RecoveryCoordinator } from './recovery-coordinator';
 export { ToolExecutionService } from './tool-execution-service';
