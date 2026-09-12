@@ -4,6 +4,7 @@ import type { ModelCallStore } from './model-execution-service';
 import { ModelExecutionService, hashModelRequest } from './model-execution-service';
 
 const request = { messages: [{ role: 'user', content: 'hello' }] };
+const noop = () => vi.fn(async () => undefined);
 
 describe('ModelExecutionService', () => {
   it('persists call intent and attempt before invoking the provider', async () => {
@@ -26,10 +27,10 @@ describe('ModelExecutionService', () => {
   it('replays a durable successful call without invoking the provider again', async () => {
     const store: ModelCallStore = {
       getCall: vi.fn().mockResolvedValue({ status: 'SUCCEEDED', response: { text: 'cached' }, replayPolicy: 'REPLAYABLE', attemptCount: 1 }),
-      createCall: vi.fn().mockResolvedValue(),
-      createAttempt: vi.fn().mockResolvedValue(),
-      completeAttempt: vi.fn().mockResolvedValue(),
-      completeCall: vi.fn().mockResolvedValue(),
+      createCall: noop(),
+      createAttempt: noop(),
+      completeAttempt: noop(),
+      completeCall: noop(),
     };
     const provider: ModelProvider = { invoke: vi.fn() };
     const service = new ModelExecutionService(store, provider);
@@ -41,10 +42,10 @@ describe('ModelExecutionService', () => {
 
   it('records a failed non-replayable provider call and converts it to a durable non-replayable error', async () => {
     const store: ModelCallStore = {
-      createCall: vi.fn().mockResolvedValue(),
-      createAttempt: vi.fn().mockResolvedValue(),
-      completeAttempt: vi.fn().mockResolvedValue(),
-      completeCall: vi.fn().mockResolvedValue(),
+      createCall: noop(),
+      createAttempt: noop(),
+      completeAttempt: noop(),
+      completeCall: noop(),
     };
     const provider: ModelProvider = { invoke: vi.fn().mockRejectedValue(new Error('provider timeout')) };
     const service = new ModelExecutionService(store, provider);
