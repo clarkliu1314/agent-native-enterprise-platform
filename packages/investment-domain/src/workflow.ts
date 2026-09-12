@@ -5,8 +5,6 @@ export interface InvestmentWorkflowStartResult {
   opportunityId: string;
 }
 
-const WORKFLOW_STEPS = ['research', 'due_diligence', 'analysis', 'recommendation'] as const;
-
 export class InvestmentWorkflow {
   constructor(private readonly runtime: InvestmentWorkflowRuntime) {}
 
@@ -15,15 +13,18 @@ export class InvestmentWorkflow {
     opportunityId: string;
     idempotencyKey: string;
   }): Promise<InvestmentWorkflowStartResult> {
-    const run = await this.runtime.startRun(input);
+    const result = await this.runtime.createRun(input);
 
-    // Admission is intentionally bounded: the API-facing workflow entry point
-    // must not claim a run or execute durable workflow steps. A worker performs
-    // execution only after obtaining the authoritative owner/fencing token.
-    return { runId: run.runId, opportunityId: input.opportunityId };
+    // Admission is intentionally bounded: this method must never claim a run
+    // or execute a workflow step. DurableWorker owns execution and receives the
+    // authoritative fencing token from the durable runtime claim.
+    return { runId: result.run.runId, opportunityId: input.opportunityId };
   }
 
   async resume(input: { runId: string; approval: 'APPROVE' | 'REJECT' }): Promise<void> {
-    await this.runtime.resumeRun({ runId: input.runId, input: { step: 'approval', approval: input.approval } });
+    if (input.approval !== 'APPROVE') {
+      throw new Error(`Unsupported investment workflow resume: ${input.runId}`);
+    }
+    await this.runtime.approveRun(input.runId, `investment-approval:${input.runId}`);
   }
 }
