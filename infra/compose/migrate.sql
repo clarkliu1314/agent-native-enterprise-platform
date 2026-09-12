@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS model_calls (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ
 );
-CREATE TABLE IF NOT EXISTS model_attempts (
+CREATE TABLE IF NOT EXISTS model_call_attempts (
   attempt_id TEXT PRIMARY KEY,
   call_id TEXT NOT NULL REFERENCES model_calls(call_id),
   attempt_number INTEGER NOT NULL,
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 );
 CREATE INDEX IF NOT EXISTS checkpoints_run_sequence_idx ON checkpoints (run_id, sequence DESC);
 
-CREATE TABLE IF NOT EXISTS run_waits (
+CREATE TABLE IF NOT EXISTS wait_conditions (
   wait_id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES agent_runs(run_id),
   kind TEXT NOT NULL,
