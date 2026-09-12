@@ -69,9 +69,9 @@
 - Added `workflow_dispatch` to CI so the workflow has an explicit manual trigger contract.
 - The GitHub connector currently exposes no workflow-dispatch action.
 - Latest implementation commits in this slice before the integration gate were `36b130e`, `403f748`, `e264f95`, `353ff56`.
-- **New integration gate:** aligned `infra/compose/migrate.sql` with the durable repository schema (Run lifecycle/fencing, idempotency, events, outbox, tool calls, model calls/attempts, checkpoints, waits) while retaining legacy benchmark columns needed by existing fixtures.
-- Added `packages/runtime/src/postgres-runtime.integration.test.ts` covering transactional admission rollback and single-winner lease/fencing behavior. CI now migrates PostgreSQL before the repository test suite so these tests execute against the real schema.
-- Commits for the integration gate: `54629dc` (schema), `a8d7271` (integration tests), `8fd3436` (CI migration/test gate), followed by this documentation checkpoint. **Fresh CI verification is required before marking these gates complete.**
+- **Integration gate:** aligned `infra/compose/migrate.sql` with the durable repository schema and retained legacy benchmark columns; added PostgreSQL repository integration coverage; CI now applies the migration before the repository test suite.
+- **Correctness follow-up:** found and fixed two composition issues before claiming green: the idempotency → Run FK is deferred so atomic admission can insert the idempotency record before the Run, and Outbox payloads now carry `{ eventId, runId, sequence, type, payload }` so the Worker can consume an admitted Run without reconstructing identity from event payloads.
+- **E2E coverage:** added `tests/durable-runtime.e2e.test.ts` for API → PostgreSQL Run/Event/Outbox → OutboxPublisher → Worker → terminal Run, including the published durable envelope and second terminal Event/Outbox. Fresh CI verification remains the authority.
 
 ## Task 1: Repository and transaction primitives
 
@@ -138,7 +138,7 @@
 
 ## Task 8: End-to-end verification and documentation
 
-- [ ] Add E2E tests covering API → PostgreSQL Run/Event/Outbox → Publisher → Worker → terminal Run.
+- [x] Add E2E tests covering API → PostgreSQL Run/Event/Outbox → Publisher → Worker → terminal Run.
 - [ ] Add recovery E2E covering worker crash/lease expiry → recovery reclaim → new fencing token → continuation.
 - [ ] Add sync deadline E2E proving the request boundary does not become the durable execution boundary.
 - [ ] Add Redis Streams integration coverage for consumer-group ACK and pending-message reclamation.
