@@ -9,10 +9,7 @@ export interface InvestmentWorkflowRuntime {
     tenantId: string;
     opportunityId: string;
     idempotencyKey: string;
-  }): Promise<{
-    run: RunView;
-    replayed: boolean;
-  }>;
+  }): Promise<{ run: RunView; replayed: boolean }>;
   approveRun(runId: string, approvalId: string): Promise<RunView>;
   getRun(runId: string): Promise<RunView>;
 }
