@@ -30,7 +30,7 @@ describe('InvestmentWorkflow', () => {
     const runtime: InvestmentWorkflowRuntime = {
       startRun: vi.fn(),
       executeTurn: vi.fn(),
-      resumeRun: vi.fn().mockResolvedValue({ status: 'COMPLETED' }),
+      resumeRun: vi.fn().mockResolvedValue(undefined),
     };
     const workflow = new InvestmentWorkflow(runtime);
 
