@@ -74,7 +74,8 @@ CREATE TABLE IF NOT EXISTS outbox_events (
   tool_name TEXT,
   tenant_id TEXT,
   actor_id TEXT,
-  status TEXT NOT NULL DEFAULT 'PENDING'
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  CONSTRAINT outbox_events_tenant_idempotency_key_key UNIQUE (tenant_id, idempotency_key)
 );
 CREATE INDEX IF NOT EXISTS outbox_events_pending_idx ON outbox_events (next_attempt_at, created_at) WHERE published_at IS NULL;
 
