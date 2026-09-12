@@ -7,20 +7,26 @@ export interface CreateOpportunityCommand {
   companyId: string;
   companyName: string;
   ownerId: string;
+  actorId: string;
   idempotencyKey: string;
+  now?: string;
 }
 
 export interface AdvanceOpportunityStageCommand {
   tenantId: string;
   opportunityId: string;
   nextStage: OpportunityStage;
+  actorId: string;
   idempotencyKey: string;
+  now?: string;
 }
 
 export interface RequestIcApprovalCommand {
   tenantId: string;
   opportunityId: string;
+  actorId: string;
   idempotencyKey: string;
+  now?: string;
 }
 
 export interface InvestmentDecisionCommand {
@@ -29,7 +35,9 @@ export interface InvestmentDecisionCommand {
   decisionCycle: number;
   recommendation: InvestmentRecommendation;
   rationale: string;
+  actorId: string;
   idempotencyKey: string;
+  now?: string;
 }
 
 export type ApproveInvestmentCommand = InvestmentDecisionCommand & { recommendation: 'APPROVE' };
