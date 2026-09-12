@@ -65,3 +65,5 @@ export function createInvestmentHandler(application: InvestmentApiApplication) {
     }
   };
 }
+
+export const createVercelInvestmentHandler = createInvestmentHandler;
