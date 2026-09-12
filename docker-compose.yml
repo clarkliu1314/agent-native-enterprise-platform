@@ -32,11 +32,13 @@ services:
       PGPASSWORD: postgres
     volumes:
       - ./infra/compose/migrate.sql:/docker-entrypoint-initdb.d/001-migrate.sql:ro
+      - ./infra/compose/002-investment-domain-task3.sql:/docker-entrypoint-initdb.d/002-investment-domain-task3.sql:ro
     entrypoint: ["sh", "-ec"]
     command:
       - |
         until pg_isready -h postgres -U postgres -d agent_native; do sleep 1; done
         psql -h postgres -U postgres -d agent_native -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/001-migrate.sql
+        psql -h postgres -U postgres -d agent_native -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/002-investment-domain-task3.sql
 
   worker:
     build:
