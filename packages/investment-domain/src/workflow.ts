@@ -10,7 +10,12 @@ const WORKFLOW_STEPS = ['research', 'due_diligence', 'analysis', 'recommendation
 export class InvestmentWorkflow {
   constructor(private readonly runtime: InvestmentWorkflowRuntime) {}
 
-  async start(input: { tenantId: string; opportunityId: string; idempotencyKey: string }): Promise<InvestmentWorkflowStartResult> {
+  async start(input: {
+    tenantId: string;
+    opportunityId: string;
+    idempotencyKey: string;
+    fencingToken: bigint;
+  }): Promise<InvestmentWorkflowStartResult> {
     const run = await this.runtime.startRun(input);
     const startAt = Math.max(0, Math.min(run.nextStep ?? 0, WORKFLOW_STEPS.length));
 
@@ -18,6 +23,7 @@ export class InvestmentWorkflow {
       const step = WORKFLOW_STEPS[index];
       const result = await this.runtime.executeTurn({
         runId: run.runId,
+        fencingToken: input.fencingToken,
         input: { opportunityId: input.opportunityId, step },
       });
       if (result.status === 'WAITING' || result.status === 'COMPLETED') break;
