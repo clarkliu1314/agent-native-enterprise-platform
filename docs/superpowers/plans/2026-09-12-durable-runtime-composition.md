@@ -67,21 +67,25 @@
 - Added `@agent-native/queue` with Redis Streams publisher/consumer implementations using consumer groups, acknowledgements, and pending-entry reclamation; Worker, Recovery, and Outbox composition roots now expose Redis-backed constructors.
 - Added an injectable Redis command-client boundary and publisher tests covering lazy connection, JSON serialization, topic stream naming, and idempotent close.
 - Added `workflow_dispatch` to CI so the workflow has an explicit manual trigger contract.
-- The GitHub connector currently exposes no workflow-dispatch action; commits created through the connector have not produced a new PR run, so the latest queue changes remain unverified by Actions.
-- Latest implementation commits in this slice: `36b130e`, `403f748`, `e264f95`, `353ff56`.
+- The GitHub connector currently exposes no workflow-dispatch action.
+- Latest implementation commits in this slice before the integration gate were `36b130e`, `403f748`, `e264f95`, `353ff56`.
+- **New integration gate:** aligned `infra/compose/migrate.sql` with the durable repository schema (Run lifecycle/fencing, idempotency, events, outbox, tool calls, model calls/attempts, checkpoints, waits) while retaining legacy benchmark columns needed by existing fixtures.
+- Added `packages/runtime/src/postgres-runtime.integration.test.ts` covering transactional admission rollback and single-winner lease/fencing behavior. CI now migrates PostgreSQL before the repository test suite so these tests execute against the real schema.
+- Commits for the integration gate: `54629dc` (schema), `a8d7271` (integration tests), `8fd3436` (CI migration/test gate), followed by this documentation checkpoint. **Fresh CI verification is required before marking these gates complete.**
 
 ## Task 1: Repository and transaction primitives
 
-- [ ] Write RED tests for atomic Run admission, idempotency replay/conflict, per-Run event sequencing, and fencing-token claim.
-- [ ] Verify the tests fail because no PostgreSQL repository implementation exists.
+- [x] Write RED tests for atomic Run admission, idempotency replay/conflict, per-Run event sequencing, and fencing-token claim.
+- [x] Verify the tests fail because no PostgreSQL repository implementation exists.
 - [x] Implement repository ports and SQL transaction helpers with parameterized queries.
 - [x] Implement atomic `createRun`, `claimRun`, `renewLease`, and fenced durable-write primitives.
-- [ ] Add integration tests using the existing Compose PostgreSQL service; assert rollback leaves no Run/Event/Outbox/Idempotency residue.
+- [x] Add integration tests using the existing Compose PostgreSQL service; assert rollback leaves no Run/Event/Outbox/Idempotency residue.
+- [ ] Verify the integration gate in CI and add the authoritative Run number.
 - [ ] Commit `feat(runtime): add transactional durable repositories`.
 
 ## Task 2: RuntimeFacade lifecycle services
 
-- [ ] Write RED tests for `createRun`, `resumeRun`, `cancelRun`, `approveRun`, `getRun`, and event/checkpoint queries.
+- [x] Write RED tests for `createRun`, `resumeRun`, `cancelRun`, `approveRun`, `getRun`, and event/checkpoint queries.
 - [x] Implement the six-state FSM with terminal-state irreversibility and WAITING wake-up semantics.
 - [x] Implement transactional Event + Outbox insertion and monotonic per-Run sequence allocation.
 - [x] Implement API idempotency replay and 409 command-hash conflict semantics.
@@ -117,7 +121,7 @@
 
 ## Task 6: Vercel-compatible API composition
 
-- [ ] Write RED API tests for POST `/runs` async 202, sync terminal 200, sync deadline 202, idempotent replay, conflict 409, and GET durable state.
+- [x] Write RED API tests for POST `/runs` async 202, sync terminal 200, sync deadline 202, idempotent replay, conflict 409, and GET durable state.
 - [x] Implement `apps/api/src/composition.ts` so the handler receives injected `RuntimeFacade` and does not instantiate repositories/adapters inside request logic.
 - [x] Update `apps/api/src/handler.ts` to expose the durable handler without moving durable execution into the request boundary.
 - [ ] Verify API typecheck/build and focused handler/deployment tests on the new composition changes.
@@ -125,7 +129,7 @@
 
 ## Task 7: Recovery and Outbox process roots
 
-- [ ] Write RED process-contract tests proving API, Worker, Recovery, and Outbox Publisher use separate composition roots while sharing the same Runtime implementation.
+- [x] Write RED process-contract tests proving API, Worker, Recovery, and Outbox Publisher use separate composition roots while sharing the same Runtime implementation.
 - [x] Implement minimal composition roots for Worker, Recovery, and Publisher with explicit dependency injection.
 - [x] Wire Redis-backed constructors into Worker, Recovery, and Outbox Publisher roots.
 - [ ] Add Compose services only for the real durable processes; keep the Vercel API stateless.
