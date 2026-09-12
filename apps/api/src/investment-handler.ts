@@ -56,7 +56,7 @@ export function createInvestmentHandler(application: InvestmentApiApplication) {
       const resumeMatch = url.pathname.match(/^\/investment-workflows\/([^/]+)\/resume$/);
       if (method === 'POST' && resumeMatch) {
         const result = await application.resumeWorkflow({ ...body, tenantId, runId: decodeURIComponent(resumeMatch[1]) });
-        return Response.json(result, { status: 202 });
+        return result === undefined ? new Response(null, { status: 202 }) : Response.json(result, { status: 202 });
       }
 
       return Response.json({ error: 'not_found' }, { status: 404 });
