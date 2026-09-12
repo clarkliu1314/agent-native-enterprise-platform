@@ -1,8 +1,18 @@
+import type { RunView } from '@agent-native/runtime-contract/durable';
+
+/**
+ * Investment domain depends only on the durable runtime admission/resume
+ * contract. Execution, leasing and fencing remain owned by the runtime worker.
+ */
 export interface InvestmentWorkflowRuntime {
-  startRun(input: { tenantId: string; opportunityId: string; idempotencyKey: string }): Promise<{
-    runId: string;
-    nextStep?: number;
+  createRun(input: {
+    tenantId: string;
+    opportunityId: string;
+    idempotencyKey: string;
+  }): Promise<{
+    run: RunView;
+    replayed: boolean;
   }>;
-  executeTurn(input: { runId: string; fencingToken: bigint; input: unknown }): Promise<{ status: 'CONTINUE' | 'WAITING' | 'COMPLETED' }>;
-  resumeRun(input: { runId: string; input: unknown }): Promise<void>;
+  approveRun(runId: string, approvalId: string): Promise<RunView>;
+  getRun(runId: string): Promise<RunView>;
 }
