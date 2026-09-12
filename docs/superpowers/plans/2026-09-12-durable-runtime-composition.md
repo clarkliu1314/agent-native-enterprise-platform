@@ -68,10 +68,12 @@
 - Added an injectable Redis command-client boundary and publisher tests covering lazy connection, JSON serialization, topic stream naming, and idempotent close.
 - Added `workflow_dispatch` to CI so the workflow has an explicit manual trigger contract.
 - The GitHub connector currently exposes no workflow-dispatch action.
-- Latest implementation commits in this slice before the integration gate were `36b130e`, `403f748`, `e264f95`, `353ff56`.
 - **Integration gate:** aligned `infra/compose/migrate.sql` with the durable repository schema and retained legacy benchmark columns; added PostgreSQL repository integration coverage; CI now applies the migration before the repository test suite.
-- **Correctness follow-up:** found and fixed two composition issues before claiming green: the idempotency → Run FK is deferred so atomic admission can insert the idempotency record before the Run, and Outbox payloads now carry `{ eventId, runId, sequence, type, payload }` so the Worker can consume an admitted Run without reconstructing identity from event payloads.
-- **E2E coverage:** added `tests/durable-runtime.e2e.test.ts` for API → PostgreSQL Run/Event/Outbox → OutboxPublisher → Worker → terminal Run, including the published durable envelope and second terminal Event/Outbox. Fresh CI verification remains the authority.
+- **Correctness follow-up:** the idempotency → Run FK is deferred so atomic admission can insert the idempotency record before the Run; Outbox payloads now carry `{ eventId, runId, sequence, type, payload }` so Worker delivery has durable Run identity.
+- **E2E coverage:** added `tests/durable-runtime.e2e.test.ts` for API → PostgreSQL Run/Event/Outbox → OutboxPublisher → Worker → terminal Run.
+- **Recovery E2E:** added `tests/durable-recovery.e2e.test.ts` for expired lease → recovery reclaim → fencing token increment → recovered queue message → Worker continuation.
+- **Redis integration:** added `RedisStreamConsumer.consumeOnce()` and configurable pending-idle threshold, plus `packages/queue/src/redis.integration.test.ts` covering ACK and pending-message reclamation. CI now provisions Redis alongside PostgreSQL.
+- Fresh CI verification is still the authority; the connector currently exposes no workflow-dispatch write operation and current commit statuses have not attached a new run to the latest connector-created commits.
 
 ## Task 1: Repository and transaction primitives
 
@@ -105,7 +107,8 @@
 - [ ] Write RED tests for opaque checkpoint envelope persistence, expired-lease reclaim, new fencing token, REPLAYABLE retry, NON_REPLAYABLE durable wait, and deterministic recovery outcome.
 - [x] Implement checkpoint service and recovery coordinator using `FOR UPDATE SKIP LOCKED`.
 - [x] Ensure recovery does not mutate Run state through an unapproved transition and never reuses an old fencing token.
-- [ ] Verify crash/recovery tests and repository invariants.
+- [x] Add recovery E2E for expired-lease reclaim and new fencing token continuation.
+- [ ] Verify crash/recovery tests and repository invariants in CI.
 - [ ] Commit `feat(runtime): implement checkpoint and recovery coordination`.
 
 ## Task 5: Outbox publisher and Worker
@@ -115,8 +118,9 @@
 - [x] Implement Worker composition root using `RuntimeFacade`, queue delivery, bounded execution, and fenced lease heartbeat.
 - [x] Add Redis Streams publisher/consumer composition wiring for durable queue delivery.
 - [x] Add Redis publisher command-boundary tests with dependency injection.
-- [ ] Verify Redis-backed duplicate delivery and pending-message recovery tests.
-- [ ] Verify worker restart and duplicate-delivery tests.
+- [x] Add Redis Streams ACK/pending-message integration coverage with `consumeOnce()`.
+- [ ] Verify Redis-backed duplicate delivery and pending-message recovery in CI.
+- [ ] Verify worker restart and duplicate-delivery tests in CI.
 - [ ] Commit `feat(runtime): add worker and outbox composition roots`.
 
 ## Task 6: Vercel-compatible API composition
@@ -124,7 +128,7 @@
 - [x] Write RED API tests for POST `/runs` async 202, sync terminal 200, sync deadline 202, idempotent replay, conflict 409, and GET durable state.
 - [x] Implement `apps/api/src/composition.ts` so the handler receives injected `RuntimeFacade` and does not instantiate repositories/adapters inside request logic.
 - [x] Update `apps/api/src/handler.ts` to expose the durable handler without moving durable execution into the request boundary.
-- [ ] Verify API typecheck/build and focused handler/deployment tests on the new composition changes.
+- [ ] Verify API typecheck/build and focused handler/deployment tests on the new composition changes in fresh CI.
 - [ ] Commit `feat(api): wire stateless request boundary to durable runtime`.
 
 ## Task 7: Recovery and Outbox process roots
@@ -132,16 +136,16 @@
 - [x] Write RED process-contract tests proving API, Worker, Recovery, and Outbox Publisher use separate composition roots while sharing the same Runtime implementation.
 - [x] Implement minimal composition roots for Worker, Recovery, and Publisher with explicit dependency injection.
 - [x] Wire Redis-backed constructors into Worker, Recovery, and Outbox Publisher roots.
-- [ ] Add Compose services only for the real durable processes; keep the Vercel API stateless.
-- [ ] Verify Compose health, startup ordering, worker consumption, recovery fallback, and publisher retry.
+- [x] Keep the Vercel API stateless and outside Docker Compose; real durable process roots use PostgreSQL/Redis.
+- [ ] Verify Compose health, startup ordering, worker consumption, recovery fallback, and publisher retry in fresh CI.
 - [ ] Commit `feat(runtime): add durable process composition roots`.
 
 ## Task 8: End-to-end verification and documentation
 
 - [x] Add E2E tests covering API → PostgreSQL Run/Event/Outbox → Publisher → Worker → terminal Run.
-- [ ] Add recovery E2E covering worker crash/lease expiry → recovery reclaim → new fencing token → continuation.
+- [x] Add recovery E2E covering worker crash/lease expiry → recovery reclaim → new fencing token → continuation.
 - [ ] Add sync deadline E2E proving the request boundary does not become the durable execution boundary.
-- [ ] Add Redis Streams integration coverage for consumer-group ACK and pending-message reclamation.
+- [x] Add Redis Streams integration coverage for consumer-group ACK and pending-message reclamation.
 - [ ] Update the main implementation plan and design docs with completed tasks, commits, and CI run numbers.
-- [ ] Run repository typecheck, full tests, API build, benchmark hard gate, and Compose smoke.
+- [ ] Run repository typecheck, full tests, API build, benchmark hard gate, and Compose smoke on the same current head.
 - [ ] Commit `docs(runtime): close durable composition implementation gate`.
