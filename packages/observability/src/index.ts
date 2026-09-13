@@ -1,5 +1,6 @@
 import { sanitizeAttributes } from './sanitizer.js';
-export { MemoryObservabilityMetrics, assertBoundedMetricLabels, type MetricEntry, type MetricLabels } from './testing.js';
+export { sanitizeAttributes, type SafeScalar } from './sanitizer.js';
+export { MemoryObservabilityMetrics, assertBoundedMetricLabels, assertCanonicalMetricName, type MetricEntry, type MetricLabels } from './testing.js';
 
 export type CorrelationContext = {
   requestId: string;
@@ -21,6 +22,18 @@ export type ObservabilityEventName =
 export type ObservabilityLogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 export type ObservabilityOutcome = 'STARTED' | 'SUCCEEDED' | 'FAILED' | 'REJECTED' | 'RETRYING' | 'PUBLISHED';
 
+export type StableErrorCode =
+  | 'AUTHORIZATION_DENIED'
+  | 'IDEMPOTENCY_CONFLICT'
+  | 'STALE_FENCING_TOKEN'
+  | 'RUN_NOT_FOUND'
+  | 'INVALID_STATE_TRANSITION'
+  | 'RECOVERY_LEASE_LOST'
+  | 'RECOVERY_RETRYABLE'
+  | 'RECOVERY_FINAL'
+  | 'OUTBOX_PUBLISH_FAILED'
+  | 'INTERNAL_ERROR';
+
 export type StructuredLogEvent = {
   timestamp: string;
   event: ObservabilityEventName;
@@ -28,7 +41,7 @@ export type StructuredLogEvent = {
   context: CorrelationContext;
   outcome?: ObservabilityOutcome;
   durationMs?: number;
-  errorCode?: string;
+  errorCode?: StableErrorCode;
   attributes?: Record<string, string | number | boolean | null>;
 };
 
@@ -52,13 +65,30 @@ function assertCorrelation(context: CorrelationContext): void {
   if (!context.requestId || !context.traceId || !context.tenantId) throw new Error('observability event requires requestId, traceId, and tenantId');
 }
 
+export function classifyError(error: unknown): StableErrorCode {
+  if (!(error instanceof Error)) return 'INTERNAL_ERROR';
+  switch (error.name) {
+    case 'ToolPermissionDeniedError': return 'AUTHORIZATION_DENIED';
+    case 'IdempotencyConflictError':
+    case 'IdempotencyInProgressError':
+    case 'IdempotencyFinalFailureError': return 'IDEMPOTENCY_CONFLICT';
+    case 'StaleFencingTokenError': return 'STALE_FENCING_TOKEN';
+    case 'RunNotFoundError': return 'RUN_NOT_FOUND';
+    case 'InvalidStateTransitionError': return 'INVALID_STATE_TRANSITION';
+    case 'RecoveryLeaseLostError': return 'RECOVERY_LEASE_LOST';
+    case 'NonRetryableToolError': return 'RECOVERY_FINAL';
+    case 'OutboxPublishError': return 'OUTBOX_PUBLISH_FAILED';
+    default: return 'INTERNAL_ERROR';
+  }
+}
+
 export function createStructuredLogEvent(input: {
   context: CorrelationContext;
   event: string;
   level: ObservabilityLogLevel;
   outcome?: ObservabilityOutcome;
   durationMs?: number;
-  errorCode?: string;
+  errorCode?: StableErrorCode;
   attributes?: Record<string, unknown>;
 }): StructuredLogEvent {
   assertCorrelation(input.context);
