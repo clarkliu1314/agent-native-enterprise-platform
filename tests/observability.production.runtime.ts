@@ -6,7 +6,6 @@ import type { OutboxRecord, OutboxRepository } from '../packages/runtime/src/rep
 import { createDurableHandler } from '../apps/api/src/durable-handler.js';
 
 const OUTBOX_LEASE_SECONDS = 300;
-const OUTBOX_MAX_ATTEMPTS = 3;
 
 export interface ProductionScenarioResult { httpStatus: number; events: StructuredLogEvent[]; serializedTelemetry: string; businessResult: { status: string }; telemetryErrors: number; durableRun: { runId: string; state: string }; durableToolCall: { toolName: string; status: string }; publishedOutboxCount: number; }
 
@@ -49,10 +48,11 @@ export async function runProductionObservabilityScenario(input: CorrelationConte
   const publishedMessages: Array<{ topic: string; payload: unknown }> = [];
   const queue: QueuePublisher & QueueConsumer = {
     async publish(topic, payload) {
-      const envelope = payload as { payload?: { correlation?: CorrelationContext } };
-      const original = envelope.payload?.correlation ?? readCorrelation(envelope.payload as Record<string, unknown> | undefined, runId, 'investment-worker');
+      const messagePayload = payload as Record<string, unknown>;
+      const original = readCorrelation(messagePayload, runId, 'investment-worker');
       const correlation = topic === 'agent.run' ? { ...original, requestId: `delivery-${original.requestId}` } : original;
-      publishedMessages.push({ topic, payload: topic === 'agent.run' ? { ...envelope, payload: { ...envelope.payload, correlation } } : payload });
+      const deliveredPayload = topic === 'agent.run' ? { ...messagePayload, correlation } : payload;
+      publishedMessages.push({ topic, payload: deliveredPayload });
       safeEmit(logger, createStructuredLogEvent({ context: correlation, event: 'outbox.published', level: 'INFO', outcome: 'PUBLISHED' }));
     },
     async consume(handler) { const messages = publishedMessages.splice(0, publishedMessages.length); for (const message of messages) await handler(message); },
