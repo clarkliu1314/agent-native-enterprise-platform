@@ -15,14 +15,33 @@ describeIfDatabase('investment workflow durable worker e2e', () => {
   const adapter = new InvestmentWorkflowRuntimeAdapter(database, runtimeRepositories);
   const runtime = new DurableRuntimeService(runtimeRepositories, { adapter, leaseMs: 30_000, heartbeatMs: 1_000 });
   const published: Array<{ topic: string; payload: unknown }> = [];
+  let activeRunId: string | undefined;
   const queuePublisher: QueuePublisher = { async publish(topic, payload) { published.push({ topic, payload }); } };
-  const consumer: QueueConsumer = { async consume(handler) { for (const message of published.splice(0)) await handler(message); } };
+  const consumer: QueueConsumer = {
+    async consume(handler) {
+      // The full CI suite shares one database, so unrelated unpublished outbox rows
+      // can be present. Only execute the run admitted by this focused E2E test.
+      const pending = published.splice(0);
+      const deferred: Array<{ topic: string; payload: unknown }> = [];
+      for (const message of pending) {
+        const payload = message.payload as { runId?: string };
+        if (activeRunId && payload.runId !== activeRunId) {
+          deferred.push(message);
+          continue;
+        }
+        await handler(message);
+      }
+      published.push(...deferred);
+    },
+  };
   const worker = new DurableWorker(runtime, consumer, { owner: 'investment-worker', executionSliceMs: 5_000 });
   const outbox = new OutboxPublisher(new PostgresOutboxRepository(database), queuePublisher);
   const handler = createInvestmentHandler(new InvestmentApiApplicationAdapter(database));
   const runIds: string[] = [];
 
   beforeEach(async () => {
+    published.length = 0;
+    activeRunId = undefined;
     const response = await handler(new Request('https://example.test/investment-workflows', {
       method: 'POST',
       headers: {
@@ -35,6 +54,7 @@ describeIfDatabase('investment workflow durable worker e2e', () => {
     expect(response.status).toBe(202);
     const body = await response.json() as { runId: string };
     runIds.push(body.runId);
+    activeRunId = body.runId;
   });
 
   afterAll(async () => {
@@ -55,8 +75,8 @@ describeIfDatabase('investment workflow durable worker e2e', () => {
     expect(admitted.fencingToken).toBe(0n);
 
     const firstPublish = await outbox.publishBatch(10);
-    expect(firstPublish.published).toBe(1);
-    expect(published[0]).toMatchObject({ topic: 'agent.run' });
+    expect(firstPublish.published).toBeGreaterThanOrEqual(1);
+    expect(published).toContainEqual(expect.objectContaining({ topic: 'agent.run', payload: expect.objectContaining({ runId }) }));
 
     await worker.start();
 
@@ -73,8 +93,10 @@ describeIfDatabase('investment workflow durable worker e2e', () => {
     }));
     expect(resume.status).toBe(202);
 
+    published.length = 0;
     const secondPublish = await outbox.publishBatch(10);
-    expect(secondPublish.published).toBe(1);
+    expect(secondPublish.published).toBeGreaterThanOrEqual(1);
+    expect(published).toContainEqual(expect.objectContaining({ topic: 'agent.run', payload: expect.objectContaining({ runId }) }));
     await worker.start();
 
     const completed = await runtime.getRun(runId);
