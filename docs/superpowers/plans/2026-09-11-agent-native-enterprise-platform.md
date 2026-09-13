@@ -1,6 +1,6 @@
 # Agent-native Enterprise Platform Implementation Plan
 
-> **Current phase:** Stage 10 complete; Stage 11 application/API integration.
+> **Current phase:** Stage 11 complete; application/API integration and durability hardening verified.
 
 The approved architecture baseline **A** remains locked. PostgreSQL is the durable source of truth; Redis is delivery/scheduling only; RuntimeFacade is the framework-neutral application boundary; API, Worker, Recovery, and Outbox Publisher are separate composition roots; the Run FSM is exactly `QUEUED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
 
@@ -22,7 +22,7 @@ Run #437 is the completion evidence for Stage 10 and supersedes earlier pre-merg
 
 ## Stage 11 — Application/API Integration
 
-Stage 11 exposes the durable investment capabilities through the existing stateless application boundary. It must reuse existing domain services and the framework-neutral runtime port rather than introducing another runtime or persistence implementation.
+Stage 11 exposes the durable investment capabilities through the existing stateless application boundary. It reuses existing domain services and the framework-neutral runtime port without introducing another runtime or persistence implementation.
 
 ### Scope
 
@@ -49,3 +49,57 @@ Stage 11 exposes the durable investment capabilities through the existing statel
 3. Add durable integration tests for idempotency, optimistic concurrency, tenant isolation, and WAITING/resume.
 4. Add Vercel bounded-request handoff tests.
 5. Run full CI and record exact SHA/run evidence.
+
+## Stage 11 Hardening — Final Verification
+
+The durability hardening wave is complete and is now part of the authoritative mainline baseline.
+
+### H3 — Crash consistency
+
+The investment worker persists workflow cursor metadata and checkpoint state through one PostgreSQL transaction. A failure during checkpoint persistence rolls back the cursor update as well, so recovery resumes from the last committed progress. Fencing tokens continue to reject stale workers.
+
+Authoritative evidence:
+
+- H3 implementation merged through PR #23.
+- Post-merge verification: **Run #507 — GREEN**.
+
+### B14 — Retryable recovery
+
+Retryable recovery failures increment durable attempts, clear the recovery lease, and schedule the next attempt using bounded exponential backoff. A subsequent worker can reclaim the candidate only after the retry time is reached.
+
+### B15 — Terminal recovery failure
+
+Non-retryable failures transition the run to `FAILED_FINAL` and do not leave a future retry candidate.
+
+### B16 — Recovery claim exclusivity + production idempotency
+
+B16 now validates two independent protections:
+
+1. `RecoveryCandidateStore` provides exclusive recovery claiming through PostgreSQL row locking and lease/fencing semantics.
+2. `ToolExecutionService` + `PostgresToolExecutionStore` independently enforce idempotency for concurrent same-key effectful tool calls, with exactly one durable idempotency row and one outbox event.
+
+The production-path concurrency test intentionally uses two independent runtime service instances and an unsuppressed external-effect callback; the assertion is therefore not supplied by benchmark-only duplicate-effect suppression.
+
+Authoritative evidence:
+
+- B14-B16 implementation merged through PR #24.
+- PR #25 production idempotency audit merged after Run #515 — GREEN.
+- Post-merge authoritative mainline CI: **Run #516 — GREEN**.
+
+### Mainline hard gates
+
+Run #516 completed successfully on the merge commit `be38ecf30b377e93e912e775e92f8f75e35335c1` and passed the following CI gates:
+
+- Compose smoke: GREEN.
+- Typecheck: GREEN.
+- API Typecheck: GREEN.
+- API Build: GREEN.
+- Deployment Boundary verification: GREEN.
+- Benchmark hard gate: GREEN.
+- Full test job: GREEN.
+
+### Stage 11 status
+
+**CLOSED / COMPLETE.**
+
+Stage 11 completion requires the post-merge mainline verification above; earlier feature-branch runs are retained as implementation evidence but are not treated as the final completion gate.
