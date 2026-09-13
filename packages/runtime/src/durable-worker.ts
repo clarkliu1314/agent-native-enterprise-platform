@@ -62,8 +62,9 @@ export class DurableWorker {
     }
   }
 
-  private async loadDurableCorrelation(runId: string): Promise<CorrelationContext> {
+  private async loadDurableCorrelation(runId: string): Promise<CorrelationContext | undefined> {
     const durableRun = await this.runtime.getRun(runId);
+    if (!durableRun) return undefined;
     return {
       requestId: typeof durableRun.metadata?.requestId === 'string' ? durableRun.metadata.requestId : `req-${runId}`,
       traceId: typeof durableRun.metadata?.traceId === 'string' ? durableRun.metadata.traceId : `trace-${runId}`,
