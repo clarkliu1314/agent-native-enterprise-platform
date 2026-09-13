@@ -48,7 +48,7 @@ describe('production observability correlation gate', () => {
     expect(result.workerStarts).toBe(2);
     expect(result.retriedOutbox).toBeGreaterThanOrEqual(1);
     expect(result.deliveryContexts).toEqual([
-      { requestId: 'delivery-req-prod-restart-1', traceId: 'trace-prod-restart-1', tenantId: 'fund-prod-2', runId: 'run-prod-restart-1' },
+      { requestId: 'delivery-req-prod-restart-1', traceId: 'trace-prod-restart-1', tenantId: 'fund-prod-2', runId: 'run-prod-restart-1', agentId: 'investment-worker' },
     ]);
     expect(result.durableRun).toEqual({ runId: 'run-prod-restart-1', state: 'SUCCEEDED' });
   });
