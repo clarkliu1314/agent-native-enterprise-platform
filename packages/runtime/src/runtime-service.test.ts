@@ -41,6 +41,13 @@ class FakeRepos implements DurableRepositories {
   async listEvents() { return this.events; }
   async createOutbox() {}
   async saveCheckpoint(cp: CheckpointEnvelope) { this.checkpoints.push(cp); }
+  async saveRunProgress(input: { runId: string; fencingToken: bigint; metadata: Record<string, unknown>; checkpoint: CheckpointEnvelope }) {
+    expect(input.runId).toBe(this.current.runId);
+    expect(this.current.state).toBe('RUNNING');
+    expect(input.fencingToken).toBe(this.current.fencingToken);
+    this.current = { ...this.current, metadata: input.metadata };
+    this.checkpoints.push(input.checkpoint);
+  }
   async getLatestCheckpoint() { return this.checkpoints.at(-1) ?? null; }
   async findExpiredRuns() { return this.expired ? [this.current] : []; }
   async reclaimExpiredRun() { if (!this.expired || this.current.state !== 'RUNNING') return null; this.expired = false; this.current = { ...this.current, fencingToken: this.current.fencingToken + 1n, attempt: this.current.attempt + 1 }; return { run: this.current, fencingToken: this.current.fencingToken } as RunClaim; }
