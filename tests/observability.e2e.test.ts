@@ -23,7 +23,9 @@ describe('observability end-to-end contract', () => {
     expect(result.events.map((event) => event.event)).toEqual(['api.accepted', 'run.started', 'tool.started', 'tool.succeeded', 'outbox.published', 'run.succeeded']);
     expect(new Set(result.events.map((event) => event.context.traceId))).toEqual(new Set(['trace-prod-1']));
     expect(new Set(result.events.map((event) => event.context.tenantId))).toEqual(new Set(['fund-prod-1']));
-    expect(new Set(result.events.map((event) => event.context.runId))).toEqual(new Set(['run-prod-1']));
+    const runScopedEvents = result.events.filter((event) => event.event !== 'api.accepted');
+    expect(new Set(runScopedEvents.map((event) => event.context.runId))).toEqual(new Set(['run-prod-1']));
+    expect(result.events.find((event) => event.event === 'api.accepted')?.context.runId).toBeUndefined();
     expect(result.serializedTelemetry).not.toContain('production-secret');
   });
 
