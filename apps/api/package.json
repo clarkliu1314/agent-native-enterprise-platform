@@ -10,6 +10,7 @@
   "dependencies": {
     "@agent-native/deployment-boundary": "workspace:*",
     "@agent-native/runtime-contract": "workspace:*",
-    "@agent-native/runtime": "workspace:*"
+    "@agent-native/runtime": "workspace:*",
+    "@agent-native/observability": "workspace:*"
   }
 }
