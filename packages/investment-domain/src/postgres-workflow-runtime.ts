@@ -47,7 +47,6 @@ export class InvestmentWorkflowRuntimeAdapter implements RuntimeAdapter {
       const checkpointSequence = BigInt(input.run.attempt) * 100n + BigInt(nextStep);
       await this.repositories.saveRunProgress({
         runId: input.run.runId,
-        owner: input.run.leaseOwner ?? '',
         fencingToken: input.run.fencingToken,
         metadata: state,
         checkpoint: {
