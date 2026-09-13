@@ -12,12 +12,10 @@ describe('ToolExecutionService observability', () => {
       context: { actorId: 'actor-1', tenantId: 'tenant-1', permissions: ['tool:read'] },
       idempotencyKey: 'idem-1',
     };
-    const service = new ToolExecutionService({
-      authorize: async () => true,
-      execute: async () => ({ result: 'safe-output' }),
-      logger,
-      correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', agentId: 'investment-worker' },
-    } as any);
+    const service = new ToolExecutionService(
+      { authorize: async () => true, execute: async () => ({ result: 'safe-output' }) },
+      { logger, correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', agentId: 'investment-worker' } },
+    );
 
     await service.execute(request);
 
