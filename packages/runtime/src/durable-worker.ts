@@ -1,5 +1,5 @@
 import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
-import { createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
+import { classifyError, createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
 import type { QueueConsumer } from './ports';
 
 export interface DurableWorkerOptions {
@@ -13,7 +13,7 @@ export interface DurableWorkerOptions {
   correlation?: CorrelationContext;
 }
 
-export interface DurableRunMessage { runId: string; }
+export interface DurableRunMessage { runId: string; correlation?: CorrelationContext; }
 
 export class DurableWorker {
   private readonly executionSliceMs: number;
@@ -32,13 +32,14 @@ export class DurableWorker {
     await this.consumer.consume(async (message) => {
       const payload = message.payload as Partial<DurableRunMessage>;
       if (message.topic !== 'agent.run' || typeof payload.runId !== 'string' || payload.runId.length === 0) return;
-      await this.process(payload.runId);
+      await this.process(payload.runId, payload.correlation);
     });
   }
 
-  async process(runId: string): Promise<void> {
+  async process(runId: string, messageCorrelation?: CorrelationContext): Promise<void> {
     const startedAt = this.now();
-    const context = this.options.correlation ? { ...this.options.correlation, runId } : undefined;
+    const baseContext = messageCorrelation ?? this.options.correlation;
+    const context = baseContext ? { ...baseContext, runId } : undefined;
     if (this.options.logger && context) {
       safeEmit(this.options.logger, createStructuredLogEvent({ context, event: 'run.started', level: 'INFO', outcome: 'STARTED' }));
     }
@@ -53,7 +54,7 @@ export class DurableWorker {
       if (this.options.logger && context) safeEmit(this.options.logger, createStructuredLogEvent({
         context, event: 'run.failed', level: 'ERROR', outcome: 'FAILED',
         durationMs: Math.max(0, this.now().getTime() - startedAt.getTime()),
-        errorCode: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
+        errorCode: classifyError(error),
       }));
       throw error;
     }
