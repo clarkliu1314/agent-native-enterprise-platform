@@ -28,7 +28,9 @@ describe('production observability correlation gate', () => {
     expect(new Set(contexts.map((context) => context.requestId))).toEqual(new Set(['req-prod-e2e-1']));
     expect(new Set(contexts.map((context) => context.traceId))).toEqual(new Set(['trace-prod-e2e-1']));
     expect(new Set(contexts.map((context) => context.tenantId))).toEqual(new Set(['fund-prod-1']));
-    expect(new Set(contexts.map((context) => context.runId))).toEqual(new Set(['run-prod-e2e-1']));
+    const runScopedContexts = contexts.filter((context) => context.runId !== undefined);
+    expect(new Set(runScopedContexts.map((context) => context.runId))).toEqual(new Set(['run-prod-e2e-1']));
+    expect(contexts.find((context) => context.runId === undefined)).toBeDefined();
     expect(result.serializedTelemetry).not.toContain('production-secret-must-not-be-logged');
   });
 
