@@ -1,6 +1,6 @@
 import type { CreateRunResult, ExecuteBoundedResult, RunView, RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { createDurableHandler } from '../../../apps/api/src/durable-handler.js';
-import { DurableWorker } from '@agent-native/runtime/durable-worker';
+import { DurableWorker } from '@agent-native/runtime';
 import { ToolExecutionService, type ToolExecutionRequest } from '@agent-native/tool-runtime';
 import { OutboxPublisher, type OutboxMessage, type OutboxRepository } from '@agent-native/outbox';
 import { createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger, type StructuredLogEvent } from './index.js';
