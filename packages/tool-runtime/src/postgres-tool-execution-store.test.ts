@@ -85,6 +85,41 @@ describe('PostgresToolExecutionStore', () => {
     expect(results.filter((result) => result.kind === 'CONFLICT' && result.state === 'IN_PROGRESS')).toHaveLength(1);
   });
 
+  it('enforces one external effect when two independent runtime instances execute the same idempotency key concurrently', async () => {
+    let externalEffects = 0;
+    const request = {
+      tool: { name: 'crm.create_company', description: 'create company', sideEffect: true },
+      input: { name: 'Concurrent' },
+      context: { actorId: 'worker-a', tenantId: 'fund-1', permissions: ['crm:write'] },
+      idempotencyKey: 'state-service-race',
+    };
+    const execute = async () => {
+      externalEffects += 1;
+      return { companyId: 'company-concurrent' };
+    };
+    const serviceA = new ToolExecutionService({ authorize: async () => true, execute, store });
+    const serviceB = new ToolExecutionService({ authorize: async () => true, execute, store });
+
+    const results = await Promise.allSettled([serviceA.execute(request), serviceB.execute({ ...request, context: { ...request.context, actorId: 'worker-b' } })]);
+    const fulfilled = results.filter((result) => result.status === 'fulfilled');
+    const rejected = results.filter((result) => result.status === 'rejected');
+    const rows = await pool.query(
+      `SELECT
+         (SELECT COUNT(*) FROM tool_execution_idempotency WHERE tenant_id = $1 AND idempotency_key = $2) AS idempotency_count,
+         (SELECT COUNT(*) FROM outbox_events WHERE tenant_id = $1 AND idempotency_key = $2) AS outbox_count,
+         (SELECT status FROM tool_execution_idempotency WHERE tenant_id = $1 AND idempotency_key = $2) AS status`,
+      [request.context.tenantId, request.idempotencyKey],
+    );
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(Error);
+    expect(externalEffects).toBe(1);
+    expect(Number(rows.rows[0].idempotency_count)).toBe(1);
+    expect(Number(rows.rows[0].outbox_count)).toBe(1);
+    expect(rows.rows[0].status).toBe('SUCCEEDED');
+  });
+
   it('durably reloads an idempotent result after a new store instance is created', async () => {
     await store.reserve({ idempotencyKey: 'pg-idem-1', tenantId: 'fund-1', toolName: 'crm.create_company', actorId: 'user-1', input: { name: 'Acme Capital' } });
     await store.commit({ idempotencyKey: 'pg-idem-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' }, outboxEvent: { type: 'tool.execution.completed', idempotencyKey: 'pg-idem-1', toolName: 'crm.create_company', tenantId: 'fund-1', actorId: 'user-1', output: { companyId: 'company-1' } } });
