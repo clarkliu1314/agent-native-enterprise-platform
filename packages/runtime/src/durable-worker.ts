@@ -38,7 +38,15 @@ export class DurableWorker {
 
   async process(runId: string, messageCorrelation?: CorrelationContext): Promise<void> {
     const startedAt = this.now();
-    const baseContext = messageCorrelation ?? this.options.correlation;
+    const durableRun = await this.runtime.getRun(runId);
+    const durableContext: CorrelationContext = {
+      requestId: typeof durableRun.metadata.requestId === 'string' ? durableRun.metadata.requestId : `req-${runId}`,
+      traceId: typeof durableRun.metadata.traceId === 'string' ? durableRun.metadata.traceId : `trace-${runId}`,
+      tenantId: typeof durableRun.metadata.tenantId === 'string' ? durableRun.metadata.tenantId : 'unknown',
+      runId: durableRun.runId,
+      agentId: durableRun.agentId,
+    };
+    const baseContext = messageCorrelation ?? this.options.correlation ?? durableContext;
     const context = baseContext ? { ...baseContext, runId } : undefined;
     if (this.options.logger && context) {
       safeEmit(this.options.logger, createStructuredLogEvent({ context, event: 'run.started', level: 'INFO', outcome: 'STARTED' }));
