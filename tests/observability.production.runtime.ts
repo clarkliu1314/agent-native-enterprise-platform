@@ -49,9 +49,10 @@ export async function runProductionObservabilityScenario(input: CorrelationConte
   const queue: QueuePublisher & QueueConsumer = {
     async publish(topic, payload) {
       const durablePayload = payload as Record<string, unknown>;
+      const durableRunId = typeof durablePayload.runId === 'string' ? durablePayload.runId : undefined;
       let original: CorrelationContext;
-      if (topic === 'agent.run' && typeof durablePayload.runId === 'string') {
-        const durableRun = await runtime.getRun(durablePayload.runId);
+      if (durableRunId) {
+        const durableRun = await runtime.getRun(durableRunId);
         original = readCorrelation(durableRun.metadata, durableRun.runId, durableRun.agentId);
       } else {
         original = readCorrelation(durablePayload, runId, 'investment-worker');
