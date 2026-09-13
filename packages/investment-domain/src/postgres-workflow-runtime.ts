@@ -45,21 +45,22 @@ export class InvestmentWorkflowRuntimeAdapter implements RuntimeAdapter {
       nextStep += 1;
       const state = { tenantId, opportunityId, nextStep } satisfies WorkflowMetadata;
       const checkpointSequence = BigInt(input.run.attempt) * 100n + BigInt(nextStep);
-      const updated = await this.database.query(
-        `UPDATE agent_runs SET metadata=$2::jsonb, version=version+1 WHERE run_id=$1 AND state='RUNNING' AND fencing_token=$3::bigint`,
-        [input.run.runId, JSON.stringify(state), input.run.fencingToken.toString()],
-      );
-      if (updated.rowCount !== 1) throw new Error(`Investment workflow fenced write rejected: ${input.run.runId}`);
-      await this.repositories.saveCheckpoint({
-        checkpointId: `${input.run.runId}:checkpoint:${checkpointSequence}`,
+      await this.repositories.saveRunProgress({
         runId: input.run.runId,
-        sequence: checkpointSequence,
+        owner: input.run.leaseOwner ?? '',
         fencingToken: input.run.fencingToken,
-        adapter: this.name,
-        adapterVersion: this.version,
-        schemaVersion: 1,
-        createdAt: new Date().toISOString(),
-        payload: this.serializeCheckpoint(state),
+        metadata: state,
+        checkpoint: {
+          checkpointId: `${input.run.runId}:checkpoint:${checkpointSequence}`,
+          runId: input.run.runId,
+          sequence: checkpointSequence,
+          fencingToken: input.run.fencingToken,
+          adapter: this.name,
+          adapterVersion: this.version,
+          schemaVersion: 1,
+          createdAt: new Date().toISOString(),
+          payload: this.serializeCheckpoint(state),
+        },
       });
     }
 
