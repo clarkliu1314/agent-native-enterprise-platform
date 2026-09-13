@@ -1,14 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { CreateRunCommand, RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { IdempotencyConflictError, RunNotFoundError } from '@agent-native/runtime';
-import { createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
-import type { MemoryObservabilityMetrics } from '@agent-native/observability';
+import { createStructuredLogEvent, safeEmit, safeMetric, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
 
 export interface DurableHandlerOptions {
   syncBudgetMs?: number;
   owner?: string;
   logger?: ObservabilityLogger;
-  metrics?: Pick<MemoryObservabilityMetrics, 'increment'>;
+  metrics?: ObservabilityMetrics;
 }
 
 export function createDurableHandler(runtime: RuntimeFacade, options: DurableHandlerOptions = {}) {
@@ -28,8 +27,8 @@ export function createDurableHandler(runtime: RuntimeFacade, options: DurableHan
         const context: CorrelationContext = { requestId, traceId, tenantId };
         const metadata = { ...suppliedMetadata, requestId, traceId, tenantId };
         const command: CreateRunCommand = { agentId: body.agentId, input: body.input, metadata, executionMode, idempotencyKey: request.headers.get('idempotency-key') ?? undefined };
-        emit(options.logger, createStructuredLogEvent({ context: { ...context, agentId: body.agentId }, event: 'api.accepted', level: 'INFO', outcome: 'STARTED' }));
-        increment(options.metrics, 'agent_run_started_total', { agent: body.agentId, outcome: 'STARTED' });
+        safeEmit(options.logger!, createStructuredLogEvent({ context: { ...context, agentId: body.agentId }, event: 'api.accepted', level: 'INFO', outcome: 'STARTED' }));
+        safeMetric(() => options.metrics?.increment('agent_run_started_total', 1, { agent: body.agentId as string, outcome: 'STARTED' }));
         const created = await runtime.createRun(command);
         if (executionMode === 'sync' && !created.replayed) {
           const result = await runtime.executeRunBounded(created.run.runId, owner, new Date(Date.now() + syncBudgetMs));
@@ -47,15 +46,6 @@ export function createDurableHandler(runtime: RuntimeFacade, options: DurableHan
       return Response.json({ error: 'internal_error' }, { status: 500 });
     }
   };
-}
-
-function emit(logger: ObservabilityLogger | undefined, event: Parameters<ObservabilityLogger['emit']>[0]): void {
-  if (logger) safeEmit(logger, event);
-}
-
-function increment(metrics: Pick<MemoryObservabilityMetrics, 'increment'> | undefined, name: string, labels: Record<string, string>): void {
-  if (!metrics) return;
-  try { metrics.increment(name, 1, labels); } catch { /* telemetry is best-effort */ }
 }
 
 function jsonResponse(value: unknown, status: number): Response {
