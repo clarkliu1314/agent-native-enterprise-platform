@@ -37,4 +37,19 @@ describe('production observability correlation gate', () => {
     expect(result.publishedOutboxCount).toBeGreaterThanOrEqual(2);
     expect(result.telemetryErrors).toBeGreaterThanOrEqual(4);
   });
+
+  it('recovers correlation from durable run metadata after worker restart and in-memory context loss', async () => {
+    const { runProductionObservabilityRecoveryScenario } = await import('./observability.production.runtime.js');
+    const result = await runProductionObservabilityRecoveryScenario({
+      requestId: 'req-prod-restart-1', traceId: 'trace-prod-restart-1', tenantId: 'fund-prod-2', runId: 'run-prod-restart-1',
+    });
+
+    expect(result.businessResult).toEqual({ status: 'SUCCEEDED' });
+    expect(result.workerStarts).toBe(2);
+    expect(result.retriedOutbox).toBeGreaterThanOrEqual(1);
+    expect(result.deliveryContexts).toEqual([
+      { requestId: 'delivery-req-prod-restart-1', traceId: 'trace-prod-restart-1', tenantId: 'fund-prod-2', runId: 'run-prod-restart-1' },
+    ]);
+    expect(result.durableRun).toEqual({ runId: 'run-prod-restart-1', state: 'SUCCEEDED' });
+  });
 });
