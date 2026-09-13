@@ -1,4 +1,5 @@
 import { sanitizeAttributes } from './sanitizer.js';
+export { MemoryObservabilityMetrics, assertBoundedMetricLabels, type MetricEntry, type MetricLabels } from './testing.js';
 
 export type CorrelationContext = {
   requestId: string;
@@ -18,7 +19,7 @@ export type ObservabilityEventName =
   | 'outbox.published' | 'outbox.failed' | 'outbox.retried';
 
 export type ObservabilityLogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
-export type ObservabilityOutcome = 'STARTED' | 'SUCCEEDED' | 'FAILED' | 'REJECTED' | 'RETRYING';
+export type ObservabilityOutcome = 'STARTED' | 'SUCCEEDED' | 'FAILED' | 'REJECTED' | 'RETRYING' | 'PUBLISHED';
 
 export type StructuredLogEvent = {
   timestamp: string;
