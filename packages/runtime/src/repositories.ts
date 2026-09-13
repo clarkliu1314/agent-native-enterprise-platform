@@ -30,6 +30,12 @@ export interface DurableRepositories {
   getToolCall?(toolCallId: string): Promise<ToolCallRecord | null>;
   completeToolCall?(input: { toolCallId: string; runId: string; fencingToken: bigint; status: 'SUCCEEDED' | 'FAILED'; output?: unknown; error?: string }): Promise<boolean>;
   saveCheckpoint(checkpoint: CheckpointEnvelope): Promise<void>;
+  saveRunProgress(input: {
+    runId: string;
+    fencingToken: bigint;
+    metadata: Record<string, unknown>;
+    checkpoint: CheckpointEnvelope;
+  }): Promise<void>;
   getLatestCheckpoint(runId: string): Promise<CheckpointEnvelope | null>;
   findExpiredRuns(limit: number): Promise<RunView[]>;
   reclaimExpiredRun(runId: string, owner: string, leaseMs: number): Promise<RunClaim | null>;
