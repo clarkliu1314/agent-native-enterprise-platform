@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 describe('production observability correlation gate', () => {
-  it('uses the production API handler, worker, tool service, and outbox publisher as one correlated chain', async () => {
+  it('uses the production API handler, durable runtime, worker, tool service, and outbox publisher as one correlated chain', async () => {
     const { runProductionObservabilityScenario } = await import('./observability.e2e.js');
 
     const result = await runProductionObservabilityScenario({
@@ -15,6 +15,9 @@ describe('production observability correlation gate', () => {
 
     expect(result.httpStatus).toBe(200);
     expect(result.businessResult).toEqual({ status: 'SUCCEEDED' });
+    expect(result.durableRun).toEqual({ runId: 'run-prod-e2e-1', state: 'SUCCEEDED' });
+    expect(result.durableToolCall).toEqual({ toolName: 'crm.create_company', status: 'SUCCEEDED' });
+    expect(result.publishedOutboxCount).toBeGreaterThanOrEqual(2);
     expect(result.events.map((event) => event.event)).toEqual([
       'api.accepted',
       'run.started',
@@ -49,6 +52,9 @@ describe('production observability correlation gate', () => {
 
     expect(result.httpStatus).toBe(200);
     expect(result.businessResult).toEqual({ status: 'SUCCEEDED' });
+    expect(result.durableRun).toEqual({ runId: 'run-prod-e2e-2', state: 'SUCCEEDED' });
+    expect(result.durableToolCall).toEqual({ toolName: 'crm.create_company', status: 'SUCCEEDED' });
+    expect(result.publishedOutboxCount).toBeGreaterThanOrEqual(2);
     expect(result.telemetryErrors).toBeGreaterThanOrEqual(4);
   });
 });
