@@ -38,16 +38,10 @@ export class DurableWorker {
 
   async process(runId: string, messageCorrelation?: CorrelationContext): Promise<void> {
     const startedAt = this.now();
-    const durableRun = await this.runtime.getRun(runId);
-    const durableContext: CorrelationContext = {
-      requestId: typeof durableRun.metadata.requestId === 'string' ? durableRun.metadata.requestId : `req-${runId}`,
-      traceId: typeof durableRun.metadata.traceId === 'string' ? durableRun.metadata.traceId : `trace-${runId}`,
-      tenantId: typeof durableRun.metadata.tenantId === 'string' ? durableRun.metadata.tenantId : 'unknown',
-      runId: durableRun.runId,
-      agentId: durableRun.agentId,
-    };
-    const baseContext = messageCorrelation ?? this.options.correlation ?? durableContext;
-    const context = baseContext ? { ...baseContext, runId } : undefined;
+    const baseContext = messageCorrelation ?? this.options.correlation;
+    const context = baseContext
+      ? { ...baseContext, runId }
+      : await this.loadDurableCorrelation(runId);
     if (this.options.logger && context) {
       safeEmit(this.options.logger, createStructuredLogEvent({ context, event: 'run.started', level: 'INFO', outcome: 'STARTED' }));
     }
@@ -66,5 +60,16 @@ export class DurableWorker {
       }));
       throw error;
     }
+  }
+
+  private async loadDurableCorrelation(runId: string): Promise<CorrelationContext> {
+    const durableRun = await this.runtime.getRun(runId);
+    return {
+      requestId: typeof durableRun.metadata?.requestId === 'string' ? durableRun.metadata.requestId : `req-${runId}`,
+      traceId: typeof durableRun.metadata?.traceId === 'string' ? durableRun.metadata.traceId : `trace-${runId}`,
+      tenantId: typeof durableRun.metadata?.tenantId === 'string' ? durableRun.metadata.tenantId : 'unknown',
+      runId: durableRun.runId,
+      agentId: durableRun.agentId,
+    };
   }
 }
