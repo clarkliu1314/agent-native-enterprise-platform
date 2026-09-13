@@ -21,6 +21,7 @@ describe('production observability correlation gate', () => {
       'tool.started',
       'tool.succeeded',
       'outbox.published',
+      'run.succeeded',
     ]);
 
     const contexts = result.events.map((event) => event.context);
