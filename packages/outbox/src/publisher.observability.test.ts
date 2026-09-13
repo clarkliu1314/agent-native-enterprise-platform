@@ -12,11 +12,11 @@ describe('OutboxPublisher observability', () => {
       markPublished: vi.fn().mockResolvedValue(undefined),
       release: vi.fn().mockResolvedValue(undefined),
     };
-    const publisher = new OutboxPublisher(
+    const publisher = new (OutboxPublisher as any)(
       repository,
       async () => undefined,
-      { logger, correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', runId: 'run-1' } } as any,
-    );
+      { logger, correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', runId: 'run-1' } },
+    ) as OutboxPublisher;
 
     await publisher.publishBatch(1, 'publisher-1');
 
@@ -26,11 +26,11 @@ describe('OutboxPublisher observability', () => {
     expect(JSON.stringify(events)).not.toContain('do-not-log');
 
     events.length = 0;
-    const failingPublisher = new OutboxPublisher(
+    const failingPublisher = new (OutboxPublisher as any)(
       repository,
       async () => { throw new Error('broker-down'); },
-      { logger, correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', runId: 'run-1' } } as any,
-    );
+      { logger, correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', runId: 'run-1' } },
+    ) as OutboxPublisher;
     await failingPublisher.publishBatch(1, 'publisher-1');
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({ event: 'outbox.failed' }),
