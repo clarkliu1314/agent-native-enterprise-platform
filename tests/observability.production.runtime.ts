@@ -102,7 +102,7 @@ class ScopedProductionOutboxRepository implements OutboxRepository {
        RETURNING o.outbox_id, o.event_id, o.topic, o.payload, o.attempts`,
         [limit, OUTBOX_LEASE_SECONDS * 1000, this.runId],
       );
-      return result.rows.map((row) => ({ outboxId: String(row.outbox_id), eventId: String(row.eventId), topic: String(row.topic), payload: row.payload, attempts: Number(row.attempts) }));
+      return result.rows.map((row) => ({ outboxId: String(row.outbox_id), eventId: String(row.event_id), topic: String(row.topic), payload: row.payload, attempts: Number(row.attempts) }));
     });
   }
 
