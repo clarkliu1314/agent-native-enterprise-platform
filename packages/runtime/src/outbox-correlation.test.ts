@@ -4,19 +4,21 @@ import type { OutboxRecord, OutboxRepository } from './repositories';
 import type { QueuePublisher } from './ports';
 import type { ObservabilityLogger } from '@agent-native/observability';
 
+const correlation = {
+  requestId: 'req-durable-1',
+  traceId: 'trace-durable-1',
+  tenantId: 'fund-durable-1',
+  runId: 'run-durable-1',
+  agentId: 'investment-worker',
+};
+
 const record: OutboxRecord = {
   outboxId: 'outbox-1',
   eventId: 'event-1',
   topic: 'agent.run',
   payload: {
     runId: 'run-durable-1',
-    correlation: {
-      requestId: 'req-durable-1',
-      traceId: 'trace-durable-1',
-      tenantId: 'fund-durable-1',
-      runId: 'run-durable-1',
-      agentId: 'investment-worker',
-    },
+    correlation,
   },
   attempts: 1,
 };
@@ -42,7 +44,7 @@ describe('OutboxPublisher correlation durability', () => {
     expect(events).toEqual([expect.objectContaining({
       event: 'outbox.published',
       outcome: 'PUBLISHED',
-      context: record.payload.correlation,
+      context: correlation,
     })]);
   });
 
