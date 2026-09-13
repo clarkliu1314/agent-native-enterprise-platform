@@ -3,7 +3,10 @@ import {
   createStructuredLogEvent,
   safeEmit,
   type CorrelationContext,
+  type ObservabilityLogLevel,
   type ObservabilityLogger,
+  type ObservabilityOutcome,
+  type StableErrorCode,
 } from '@agent-native/observability';
 import type { QueuePublisher } from './ports';
 import type { OutboxRecord, OutboxRepository } from './repositories';
@@ -54,9 +57,13 @@ export class OutboxPublisher {
 
   private emit(
     context: CorrelationContext | undefined,
-    input: Parameters<typeof createStructuredLogEvent>[0] extends infer T
-      ? T extends { context: CorrelationContext } ? Omit<T, 'context'> : never
-      : never,
+    input: {
+      event: string;
+      level: ObservabilityLogLevel;
+      outcome?: ObservabilityOutcome;
+      errorCode?: StableErrorCode;
+      attributes?: Record<string, unknown>;
+    },
   ): void {
     if (!context || !this.options.logger) return;
     safeEmit(this.options.logger, createStructuredLogEvent({ context, ...input }));
