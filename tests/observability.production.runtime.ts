@@ -48,10 +48,16 @@ export async function runProductionObservabilityScenario(input: CorrelationConte
   const publishedMessages: Array<{ topic: string; payload: unknown }> = [];
   const queue: QueuePublisher & QueueConsumer = {
     async publish(topic, payload) {
-      const messagePayload = payload as Record<string, unknown>;
-      const original = readCorrelation(messagePayload, runId, 'investment-worker');
+      const durablePayload = payload as Record<string, unknown>;
+      let original: CorrelationContext;
+      if (topic === 'agent.run' && typeof durablePayload.runId === 'string') {
+        const durableRun = await runtime.getRun(durablePayload.runId);
+        original = readCorrelation(durableRun.metadata, durableRun.runId, durableRun.agentId);
+      } else {
+        original = readCorrelation(durablePayload, runId, 'investment-worker');
+      }
       const correlation = topic === 'agent.run' ? { ...original, requestId: `delivery-${original.requestId}` } : original;
-      const deliveredPayload = topic === 'agent.run' ? { ...messagePayload, correlation } : payload;
+      const deliveredPayload = topic === 'agent.run' ? { ...durablePayload, correlation } : payload;
       publishedMessages.push({ topic, payload: deliveredPayload });
       safeEmit(logger, createStructuredLogEvent({ context: correlation, event: 'outbox.published', level: 'INFO', outcome: 'PUBLISHED' }));
     },
@@ -96,7 +102,7 @@ class ScopedProductionOutboxRepository implements OutboxRepository {
        RETURNING o.outbox_id, o.event_id, o.topic, o.payload, o.attempts`,
         [limit, OUTBOX_LEASE_SECONDS * 1000, this.runId],
       );
-      return result.rows.map((row) => ({ outboxId: String(row.outbox_id), eventId: String(row.event_id), topic: String(row.topic), payload: row.payload, attempts: Number(row.attempts) }));
+      return result.rows.map((row) => ({ outboxId: String(row.outbox_id), eventId: String(row.eventId), topic: String(row.topic), payload: row.payload, attempts: Number(row.attempts) }));
     });
   }
 
