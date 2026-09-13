@@ -27,23 +27,28 @@ export async function runProductionObservabilityScenario(input: CorrelationConte
   const events: StructuredLogEvent[] = [];
   let telemetryErrors = 0;
   const logger: ObservabilityLogger = { emit: (event) => { if (input.failTelemetry) { telemetryErrors += 1; throw new Error('telemetry unavailable'); } events.push(event); } };
-  const context: CorrelationContext = { requestId: input.requestId, traceId: input.traceId, tenantId: input.tenantId, runId: input.runId, agentId: 'investment-worker' };
+  const apiContext: CorrelationContext = { requestId: input.requestId, traceId: input.traceId, tenantId: input.tenantId, runId: input.runId, agentId: 'investment-worker' };
   const outbox: OutboxMessage[] = [];
   const outboxRepository: OutboxRepository = {
     async claim(limit: number) { return outbox.splice(0, limit); },
     async markPublished(_eventId: string) { return undefined; },
     async release(eventId: string) { throw new Error(`unexpected outbox release: ${eventId}`); },
   };
-  const publisher = new (OutboxPublisher as any)(outboxRepository, async () => undefined, { logger, correlation: context }) as OutboxPublisher;
-  const tool = new (ToolExecutionService as any)({
+  const publisher = new OutboxPublisher(outboxRepository, async () => undefined, { logger });
+  const tool = new ToolExecutionService({
     authorize: async () => true,
     execute: async () => ({ status: 'SUCCEEDED' }),
-    persistResultAndPublishOutbox: async (commit: any) => { outbox.push({ eventId: commit.idempotencyKey, eventType: commit.outboxEvent.type, payload: commit.outboxEvent }); },
-  }, { logger, correlation: context }) as ToolExecutionService;
+    persistResultAndPublishOutbox: async (commit) => {
+      outbox.push({ eventId: commit.idempotencyKey, eventType: commit.outboxEvent.type, payload: commit.outboxEvent, correlation: commit.outboxEvent.correlation });
+    },
+  }, { logger, correlation: apiContext });
 
   let run: RunView = makeRun(input.runId, input.tenantId);
   const runtime: RuntimeFacade = {
-    async createRun(command): Promise<CreateRunResult> { run = { ...run, agentId: command.agentId, input: command.input, metadata: command.metadata ?? {} }; return { run, replayed: false }; },
+    async createRun(command): Promise<CreateRunResult> {
+      run = { ...run, agentId: command.agentId, input: command.input, metadata: command.metadata ?? {} };
+      return { run, replayed: false };
+    },
     async executeRunBounded(runId): Promise<ExecuteBoundedResult> {
       const request: ToolExecutionRequest = {
         tool: { name: input.toolName ?? 'crm.create_company', description: 'test tool', sideEffect: true },
@@ -72,8 +77,12 @@ export async function runProductionObservabilityScenario(input: CorrelationConte
     body: JSON.stringify({ agentId: 'investment-worker', input: { secret: input.secretInput ?? 'no-secret' }, executionMode: 'async' }),
   }));
 
-  const consumer = { async consume(callback: (message: { topic: string; payload: unknown }) => Promise<void>) { await callback({ topic: 'agent.run', payload: { runId: input.runId } }); } };
-  const worker = new (DurableWorker as any)(runtime, consumer, { owner: 'worker-prod-e2e', logger, correlation: context }) as DurableWorker;
+  const consumer = {
+    async consume(callback: (message: { topic: string; payload: unknown }) => Promise<void>) {
+      await callback({ topic: 'agent.run', payload: { runId: input.runId, correlation: { ...apiContext, requestId: `delivery-${input.requestId}` } } });
+    },
+  };
+  const worker = new DurableWorker(runtime, consumer, { owner: 'worker-prod-e2e', logger, correlation: apiContext });
   await worker.start();
 
   return { httpStatus: response.status === 202 ? 200 : response.status, events, serializedTelemetry: JSON.stringify(events), businessResult: { status: run.state }, telemetryErrors };
