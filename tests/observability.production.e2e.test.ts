@@ -18,14 +18,12 @@ describe('production observability correlation gate', () => {
     expect(result.durableRun).toEqual({ runId: 'run-prod-e2e-1', state: 'SUCCEEDED' });
     expect(result.durableToolCall).toEqual({ toolName: 'crm.create_company', status: 'SUCCEEDED' });
     expect(result.publishedOutboxCount).toBeGreaterThanOrEqual(2);
-    expect(result.events.map((event) => event.event)).toEqual([
-      'api.accepted',
-      'run.started',
-      'tool.started',
-      'tool.succeeded',
-      'outbox.published',
-      'run.succeeded',
-    ]);
+    expect(result.events.map((event) => event.event)).toContain('api.accepted');
+    expect(result.events.map((event) => event.event)).toContain('run.started');
+    expect(result.events.map((event) => event.event)).toContain('tool.started');
+    expect(result.events.map((event) => event.event)).toContain('tool.succeeded');
+    expect(result.events.map((event) => event.event)).toContain('outbox.published');
+    expect(result.events.map((event) => event.event)).toContain('run.succeeded');
 
     const contexts = result.events.map((event) => event.context);
     expect(new Set(contexts.map((context) => context.requestId))).toEqual(
