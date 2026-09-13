@@ -1,102 +1,104 @@
-import { describe, expect, it } from 'vitest';
-import type { RuntimeAdapter } from '@agent-native/runtime';
-import { InvestmentWorkflowApi } from '../packages/investment-domain/src/api';
-import { PostgresInvestmentWorkflowRuntime } from '../packages/investment-domain/src/postgres-workflow-runtime';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { PostgresDatabase, PostgresRuntimeRepositories } from '../packages/runtime/src';
+import { InvestmentWorkflowRuntimeAdapter } from '../packages/investment-domain/src/postgres-workflow-runtime';
+import { InvestmentApiApplicationAdapter } from '../apps/api/src/investment-application';
+import { createInvestmentHandler } from '../apps/api/src/investment-handler';
 
 const databaseUrl = process.env.DATABASE_URL;
+const describeIfDatabase = databaseUrl ? describe : describe.skip;
 
-describe.skipIf(!databaseUrl)('investment worker crash consistency', () => {
-  it('reclaims an expired lease with a new fencing token after worker crash', async () => {
-    if (!databaseUrl) return;
+describeIfDatabase('investment worker crash consistency', () => {
+  const database = new PostgresDatabase(databaseUrl!);
+  const repositories = new PostgresRuntimeRepositories(database);
+  const adapter = new InvestmentWorkflowRuntimeAdapter(database, repositories);
+  const handler = createInvestmentHandler(new InvestmentApiApplicationAdapter(database));
+  const runIds: string[] = [];
 
-    const runtime = new PostgresInvestmentWorkflowRuntime({
-      databaseUrl,
-    });
-
-    const api = new InvestmentWorkflowApi(runtime);
-
-    const admitted = await api.startInvestmentWorkflow({
-      tenantId: 'tenant-h3-crash',
-      opportunityId: `opp-h3-${Date.now()}`,
-      idempotencyKey: `idem-h3-${Date.now()}`,
-    });
-
-    const firstClaim = await runtime.resumeRun(
-      admitted.runId,
-      'worker-a',
-    );
-
-    expect(firstClaim.state).toBe('RUNNING');
-    expect(firstClaim.fencingToken).toBe(1n);
-    expect(firstClaim.attempt).toBe(1);
-
-    /*
-     * Simulate worker-a crashing after acquiring the lease.
-     *
-     * The lease must eventually expire and become reclaimable by another
-     * worker. The second worker must receive a strictly newer fencing token.
-     */
-    await runtime.expireLeaseForTest(admitted.runId);
-
-    const secondClaim = await runtime.resumeRun(
-      admitted.runId,
-      'worker-b',
-    );
-
-    expect(secondClaim.state).toBe('RUNNING');
-    expect(secondClaim.fencingToken).toBe(2n);
-    expect(secondClaim.attempt).toBe(2);
-
-    expect(secondClaim.fencingToken).toBeGreaterThan(
-      firstClaim.fencingToken,
-    );
+  beforeEach(async () => {
+    const response = await handler(new Request('https://example.test/investment-workflows', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-tenant-id': 'tenant-h3',
+        'idempotency-key': `investment-h3-${Date.now()}-${Math.random()}`,
+      },
+      body: JSON.stringify({ opportunityId: `opportunity-h3-${Date.now()}` }),
+    }));
+    expect(response.status).toBe(202);
+    const body = await response.json() as { runId: string };
+    runIds.push(body.runId);
   });
 
-  it('rejects stale fencing after lease reclaim', async () => {
-    if (!databaseUrl) return;
+  afterAll(async () => {
+    for (const runId of runIds) {
+      await database.query('DELETE FROM outbox_events WHERE event_id IN (SELECT event_id FROM agent_events WHERE run_id=$1)', [runId]);
+      await database.query('DELETE FROM checkpoints WHERE run_id=$1', [runId]);
+      await database.query('DELETE FROM agent_events WHERE run_id=$1', [runId]);
+      await database.query('DELETE FROM idempotency_keys WHERE run_id=$1', [runId]);
+      await database.query('DELETE FROM agent_runs WHERE run_id=$1', [runId]);
+    }
+    await database.pool.end();
+  });
 
-    const runtime = new PostgresInvestmentWorkflowRuntime({
-      databaseUrl,
+  it('commits workflow cursor and checkpoint as one durable unit', async () => {
+    const runId = runIds.at(-1)!;
+    const claimed = await repositories.claimRun(runId, 'worker-h3', 30_000);
+    expect(claimed?.fencingToken).toBe(1n);
+
+    const checkpoint = {
+      checkpointId: `${runId}:checkpoint:1`,
+      runId,
+      sequence: 1n,
+      fencingToken: claimed!.fencingToken,
+      adapter: adapter.name,
+      adapterVersion: adapter.version,
+      schemaVersion: 1,
+      createdAt: new Date().toISOString(),
+      payload: adapter.serializeCheckpoint({ tenantId: 'tenant-h3', opportunityId: 'opportunity-h3', nextStep: 1 }),
+    };
+
+    await repositories.saveRunProgress({
+      runId,
+      owner: 'worker-h3',
+      fencingToken: claimed!.fencingToken,
+      metadata: { tenantId: 'tenant-h3', opportunityId: 'opportunity-h3', nextStep: 1 },
+      checkpoint,
     });
 
-    const api = new InvestmentWorkflowApi(runtime);
+    const persisted = await repositories.getRun(runId);
+    expect(persisted?.metadata.nextStep).toBe(1);
+    expect((await repositories.getLatestCheckpoint(runId))?.sequence).toBe(1n);
+  });
 
-    const admitted = await api.startInvestmentWorkflow({
-      tenantId: 'tenant-h3-fencing',
-      opportunityId: `opp-h3-fencing-${Date.now()}`,
-      idempotencyKey: `idem-h3-fencing-${Date.now()}`,
-    });
+  it('rolls back the workflow cursor when checkpoint persistence fails', async () => {
+    const runId = runIds.at(-1)!;
+    const claimed = await repositories.claimRun(runId, 'worker-h3', 30_000);
+    expect(claimed?.fencingToken).toBe(1n);
 
-    const firstClaim = await runtime.resumeRun(
-      admitted.runId,
-      'worker-a',
-    );
+    const checkpoint = {
+      checkpointId: `${runId}:checkpoint:1`,
+      runId,
+      sequence: 1n,
+      fencingToken: claimed!.fencingToken,
+      adapter: adapter.name,
+      adapterVersion: adapter.version,
+      schemaVersion: 1,
+      createdAt: new Date().toISOString(),
+      payload: adapter.serializeCheckpoint({ tenantId: 'tenant-h3', opportunityId: 'opportunity-h3', nextStep: 1 }),
+    };
 
-    expect(firstClaim.fencingToken).toBe(1n);
+    await repositories.saveCheckpoint(checkpoint);
 
-    await runtime.expireLeaseForTest(admitted.runId);
+    await expect(repositories.saveRunProgress({
+      runId,
+      owner: 'worker-h3',
+      fencingToken: claimed!.fencingToken,
+      metadata: { tenantId: 'tenant-h3', opportunityId: 'opportunity-h3', nextStep: 2 },
+      checkpoint,
+    })).rejects.toThrow();
 
-    const secondClaim = await runtime.resumeRun(
-      admitted.runId,
-      'worker-b',
-    );
-
-    expect(secondClaim.fencingToken).toBe(2n);
-
-    /*
-     * A stale worker must not be able to mutate durable state using the
-     * previous fencing token.
-     */
-    await expect(
-      runtime.saveCheckpointForTest({
-        runId: admitted.runId,
-        owner: 'worker-a',
-        fencingToken: firstClaim.fencingToken,
-        sequence: 1n,
-        payload: {
-          stale: true,
-        },
-      }),
-    ).rejects.toThrow();
+    const persisted = await repositories.getRun(runId);
+    expect(persisted?.metadata.nextStep).toBe(0);
+    expect((await repositories.getLatestCheckpoint(runId))?.sequence).toBe(1n);
   });
 });
