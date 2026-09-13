@@ -37,7 +37,20 @@ export class DurableRuntimeService implements RuntimeFacade {
     try { return { run: await this.repos.admitRun({ command, commandHash, runId, eventId }), replayed: false }; }
     catch (error) { if (!key) throw error; const existing = await this.repos.getIdempotency(key); if (existing?.commandHash === commandHash && existing.runId) return { run: await this.requireRun(existing.runId), replayed: true }; throw error; }
   }
-  async resumeRun(runId: string, owner: string): Promise<RunView> { const current = await this.requireRun(runId); if (current.state === 'SUCCEEDED' || current.state === 'FAILED' || current.state === 'CANCELLED') return current; const claimed = await this.repos.claimRun(runId, owner, this.leaseMs); if (!claimed) throw new Error(`Run cannot be claimed: ${runId}`); return claimed.run; }
+  async resumeRun(runId: string, owner: string): Promise<RunView> {
+    const current = await this.requireRun(runId);
+    if (current.state === 'SUCCEEDED' || current.state === 'FAILED' || current.state === 'CANCELLED') return current;
+
+    // A normal QUEUED run is claimed through the same durable authority as all
+    // other execution. If it is already RUNNING, the only legal retry path is
+    // the atomic expired-lease reclaim; no caller-supplied fencing token is
+    // accepted and no coordinator creates a competing ownership protocol.
+    const claimed = await this.repos.claimRun(runId, owner, this.leaseMs);
+    if (claimed) return claimed.run;
+    const recovered = await this.repos.reclaimExpiredRun(runId, owner, this.leaseMs);
+    if (recovered) return recovered.run;
+    throw new Error(`Run cannot be claimed: ${runId}`);
+  }
   async cancelRun(runId: string, reason?: string): Promise<RunView> { const run = await this.requireRun(runId); if (run.state === 'SUCCEEDED' || run.state === 'FAILED' || run.state === 'CANCELLED') return run; assertValidDurableTransition(run.state, 'CANCELLED'); return this.repos.transitionRunAndEmit({ runId, from: run.state, to: 'CANCELLED', error: reason, eventType: 'RUN_CANCELLED', eventPayload: { reason }, topic: 'agent.run' }); }
   async approveRun(runId: string, approvalId: string): Promise<RunView> { const run = await this.requireRun(runId); if (run.state !== 'WAITING') throw new Error(`Run is not waiting for approval: ${runId}`); assertValidDurableTransition('WAITING', 'QUEUED'); return this.repos.transitionRunAndEmit({ runId, from: 'WAITING', to: 'QUEUED', eventType: 'RUN_APPROVED', eventPayload: { approvalId }, topic: 'agent.run' }); }
   async executeRunBounded(runId: string, owner: string, deadlineAt: Date): Promise<ExecuteBoundedResult> { const run = await this.resumeRun(runId, owner); if (run.state !== 'RUNNING') return { run, terminal: true }; return this.executeClaimedRunBounded({ runId, owner, fencingToken: run.fencingToken }, deadlineAt); }
