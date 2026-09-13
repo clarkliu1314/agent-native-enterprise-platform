@@ -1,5 +1,5 @@
-import type { CorrelationContext, ObservabilityLogger, StructuredLogEvent } from '@agent-native/observability';
-import { classifyError, createStructuredLogEvent, safeEmit } from '@agent-native/observability';
+import type { CorrelationContext, ObservabilityLogger, StructuredLogEvent } from '../packages/observability/src/index.js';
+import { classifyError, createStructuredLogEvent, safeEmit } from '../packages/observability/src/index.js';
 import type { AdapterRunResult, QueueConsumer, QueuePublisher, RuntimeAdapter } from '../packages/runtime/src/ports.js';
 import { DurableRuntimeService, DurableWorker, OutboxPublisher, PostgresDatabase, PostgresOutboxRepository, PostgresToolRepositories, ToolExecutionService } from '../packages/runtime/src/index.js';
 import { createDurableHandler } from '../apps/api/src/durable-handler.js';
