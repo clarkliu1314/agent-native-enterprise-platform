@@ -59,7 +59,6 @@ describeIfDatabase('investment worker crash consistency', () => {
 
     await repositories.saveRunProgress({
       runId,
-      owner: 'worker-h3',
       fencingToken: claimed!.fencingToken,
       metadata: { tenantId: 'tenant-h3', opportunityId: 'opportunity-h3', nextStep: 1 },
       checkpoint,
@@ -91,7 +90,6 @@ describeIfDatabase('investment worker crash consistency', () => {
 
     await expect(repositories.saveRunProgress({
       runId,
-      owner: 'worker-h3',
       fencingToken: claimed!.fencingToken,
       metadata: { tenantId: 'tenant-h3', opportunityId: 'opportunity-h3', nextStep: 2 },
       checkpoint,
