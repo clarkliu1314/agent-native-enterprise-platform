@@ -25,7 +25,9 @@ describe('production observability correlation gate', () => {
     ]);
 
     const contexts = result.events.map((event) => event.context);
-    expect(new Set(contexts.map((context) => context.requestId))).toEqual(new Set(['req-prod-e2e-1']));
+    expect(new Set(contexts.map((context) => context.requestId))).toEqual(
+      new Set(['req-prod-e2e-1', 'delivery-req-prod-e2e-1']),
+    );
     expect(new Set(contexts.map((context) => context.traceId))).toEqual(new Set(['trace-prod-e2e-1']));
     expect(new Set(contexts.map((context) => context.tenantId))).toEqual(new Set(['fund-prod-1']));
     const runScopedContexts = contexts.filter((context) => context.runId !== undefined);
