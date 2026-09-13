@@ -4,34 +4,41 @@ import {
   type ToolExecutionResult,
   type ToolExecutionService,
 } from '@agent-native/tool-runtime';
+import { createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
 
 export type RecoveryState = 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED_RETRYABLE' | 'FAILED_FINAL';
+export interface RecoveryCandidate { request: ToolExecutionRequest; state: RecoveryState; output?: unknown; }
+export interface RecoveryObservabilityOptions { logger?: ObservabilityLogger; correlation?: CorrelationContext; }
 
-/** A persisted operation that may need deterministic recovery after a worker crash. */
-export interface RecoveryCandidate {
-  request: ToolExecutionRequest;
-  state: RecoveryState;
-  output?: unknown;
-}
-
-/**
- * Re-enters the normal tool boundary during recovery.
- *
- * Recovery never calls an effectful tool directly. It reuses ToolExecutionService so
- * authorization, idempotency reservation, result replay, and the transactional outbox
- * boundary remain identical to a normal request.
- */
 export class RecoveryCoordinator {
-  constructor(private readonly service: ToolExecutionService) {}
+  constructor(private readonly service: ToolExecutionService, private readonly observability: RecoveryObservabilityOptions = {}) {}
 
   async recover(candidate: RecoveryCandidate): Promise<ToolExecutionResult> {
     if (candidate.state === 'FAILED_FINAL') {
+      if (this.observability.logger && this.observability.correlation) safeEmit(this.observability.logger, createStructuredLogEvent({
+        context: this.observability.correlation, event: 'recovery.failed_final', level: 'ERROR', outcome: 'FAILED',
+        attributes: { toolName: candidate.request.tool.name },
+      }));
       throw new IdempotencyFinalFailureError(candidate.request.idempotencyKey);
     }
 
-    // IN_PROGRESS and FAILED_RETRYABLE deliberately re-enter the same idempotency key.
-    // The durable store decides whether the reservation is reclaimable. SUCCEEDED is also
-    // safe to re-enter because the store returns the committed result without execution.
-    return this.service.execute(candidate.request);
+    if (this.observability.logger && this.observability.correlation) safeEmit(this.observability.logger, createStructuredLogEvent({
+      context: this.observability.correlation, event: 'recovery.claimed', level: 'INFO', outcome: 'STARTED',
+      attributes: { state: candidate.state, toolName: candidate.request.tool.name },
+    }));
+    try {
+      const result = await this.service.execute(candidate.request);
+      if (this.observability.logger && this.observability.correlation) safeEmit(this.observability.logger, createStructuredLogEvent({
+        context: this.observability.correlation, event: 'recovery.completed', level: 'INFO', outcome: 'SUCCEEDED',
+        attributes: { toolName: candidate.request.tool.name, replayed: result.replayed },
+      }));
+      return result;
+    } catch (error) {
+      if (this.observability.logger && this.observability.correlation) safeEmit(this.observability.logger, createStructuredLogEvent({
+        context: this.observability.correlation, event: 'recovery.failed_final', level: 'ERROR', outcome: 'FAILED',
+        errorCode: error instanceof Error ? error.name : 'UNKNOWN_ERROR', attributes: { toolName: candidate.request.tool.name },
+      }));
+      throw error;
+    }
   }
 }
