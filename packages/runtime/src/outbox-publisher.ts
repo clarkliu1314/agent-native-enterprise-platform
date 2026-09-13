@@ -30,32 +30,36 @@ export class OutboxPublisher {
         await this.queue.publish(record.topic, record.payload);
         await this.outbox.markPublished(record.outboxId);
         published += 1;
-        if (context) {
-          safeEmit(this.options.logger ?? { emit: () => undefined }, createStructuredLogEvent({
-            context,
-            event: 'outbox.published',
-            level: 'INFO',
-            outcome: 'PUBLISHED',
-            attributes: { outboxId: record.outboxId, eventId: record.eventId, topic: record.topic },
-          }));
-        }
+        this.emit(context, {
+          event: 'outbox.published',
+          level: 'INFO',
+          outcome: 'PUBLISHED',
+          attributes: { outboxId: record.outboxId, eventId: record.eventId, topic: record.topic },
+        });
       } catch (error) {
         const delay = Math.min(this.maxBackoffMs, 2 ** Math.min(record.attempts, 10) * 100);
         await this.outbox.scheduleRetry(record.outboxId, new Date(Date.now() + delay));
         retried += 1;
-        if (context) {
-          safeEmit(this.options.logger ?? { emit: () => undefined }, createStructuredLogEvent({
-            context,
-            event: 'outbox.retried',
-            level: 'WARN',
-            outcome: 'RETRYING',
-            errorCode: classifyError(error),
-            attributes: { outboxId: record.outboxId, eventId: record.eventId, topic: record.topic, attempts: record.attempts },
-          }));
-        }
+        this.emit(context, {
+          event: 'outbox.retried',
+          level: 'WARN',
+          outcome: 'RETRYING',
+          errorCode: classifyError(error),
+          attributes: { outboxId: record.outboxId, eventId: record.eventId, topic: record.topic, attempts: record.attempts },
+        });
       }
     }
     return { published, retried };
+  }
+
+  private emit(
+    context: CorrelationContext | undefined,
+    input: Parameters<typeof createStructuredLogEvent>[0] extends infer T
+      ? T extends { context: CorrelationContext } ? Omit<T, 'context'> : never
+      : never,
+  ): void {
+    if (!context || !this.options.logger) return;
+    safeEmit(this.options.logger, createStructuredLogEvent({ context, ...input }));
   }
 }
 
