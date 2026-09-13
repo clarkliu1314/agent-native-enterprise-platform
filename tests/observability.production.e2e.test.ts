@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 describe('production observability correlation gate', () => {
   it('uses the production API handler, worker, tool service, and outbox publisher as one correlated chain', async () => {
-    const { runProductionObservabilityScenario } = await import('../packages/observability/src/e2e.js');
+    const { runProductionObservabilityScenario } = await import('./observability.e2e.js');
 
     const result = await runProductionObservabilityScenario({
       requestId: 'req-prod-e2e-1',
@@ -33,7 +33,7 @@ describe('production observability correlation gate', () => {
   });
 
   it('keeps the production business path successful when every telemetry emission fails', async () => {
-    const { runProductionObservabilityScenario } = await import('../packages/observability/src/e2e.js');
+    const { runProductionObservabilityScenario } = await import('./observability.e2e.js');
 
     const result = await runProductionObservabilityScenario({
       requestId: 'req-prod-e2e-2',
