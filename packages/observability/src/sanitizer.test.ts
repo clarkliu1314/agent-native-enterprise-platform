@@ -9,8 +9,14 @@ describe('observability sanitizer', () => {
       prompt: 'do not log this',
       completion: 'do not log this',
       password: 'secret',
+      token: 'secret-token',
+      secret: 'secret',
       apiKey: 'secret-key',
       authorization: 'Bearer secret',
+      cookie: 'session-secret',
+      privateKey: 'private-key',
+      credentials: 'credential-bundle',
+      body: 'raw-body',
       input: { name: 'private payload' },
       output: { companyId: 'private result' },
     });
@@ -26,6 +32,10 @@ describe('observability sanitizer', () => {
     });
 
     expect(result).toEqual({ state: 'RUNNING' });
+  });
+
+  it('filters credential-like keys case-insensitively', () => {
+    expect(sanitizeAttributes({ TOKEN: 'x', Secret: 'y', PrivateKey: 'z', state: 'RUNNING' })).toEqual({ state: 'RUNNING' });
   });
 
   it('preserves safe scalar operational attributes', () => {
