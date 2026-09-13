@@ -32,7 +32,6 @@ export interface DurableRepositories {
   saveCheckpoint(checkpoint: CheckpointEnvelope): Promise<void>;
   saveRunProgress(input: {
     runId: string;
-    owner: string;
     fencingToken: bigint;
     metadata: Record<string, unknown>;
     checkpoint: CheckpointEnvelope;
