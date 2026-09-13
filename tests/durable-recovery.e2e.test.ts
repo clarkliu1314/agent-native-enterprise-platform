@@ -53,13 +53,13 @@ describeIfDatabase('durable runtime crash recovery', () => {
     await worker.database.pool.end();
   });
 
-  it('reclaims an expired lease with a new fencing token and resumes without stale ownership', async () => {
+  it('schedules an expired lease and lets the durable worker reclaim it with a new fencing token', async () => {
     await api.database.query("UPDATE agent_runs SET lease_expires_at = NOW() - interval '1 second' WHERE run_id=$1", [runId]);
 
     const outcomes = await recovery.coordinator.recoverExpired(10);
     expect(outcomes).toHaveLength(1);
-    expect(outcomes[0]).toMatchObject({ runId, recovered: true, action: 'RECLAIMED', fencingToken: 2n });
-    expect(recoveredMessages[0]).toMatchObject({ topic: 'agent.run', payload: { runId, owner: expect.any(String), fencingToken: '2', recovered: true } });
+    expect(outcomes[0]).toMatchObject({ runId, recovered: true, action: 'RECLAIMED' });
+    expect(recoveredMessages[0]).toEqual({ topic: 'agent.run', payload: { runId, recovered: true } });
 
     await worker.worker.start();
 
