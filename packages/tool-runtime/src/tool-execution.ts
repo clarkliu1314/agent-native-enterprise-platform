@@ -1,10 +1,11 @@
-import { createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
+import { classifyError, createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
 
 export interface ToolDefinition { name: string; description: string; sideEffect: boolean; }
 export interface ToolExecutionContext { actorId: string; tenantId: string; permissions: string[]; }
 export interface ToolExecutionRequest { tool: ToolDefinition; input: unknown; context: ToolExecutionContext; idempotencyKey: string; }
 export interface ToolExecutionResult { output: unknown; replayed: boolean; }
-export interface ToolExecutionOutboxEvent { type: 'tool.execution.completed'; idempotencyKey: string; toolName: string; tenantId: string; actorId: string; output: unknown; }
+export interface ToolExecutionCorrelation { requestId: string; traceId: string; tenantId: string; runId?: string; workflowId?: string; agentId?: string; actorId?: string; }
+export interface ToolExecutionOutboxEvent { type: 'tool.execution.completed'; idempotencyKey: string; toolName: string; tenantId: string; actorId: string; output: unknown; correlation?: ToolExecutionCorrelation; }
 export interface ToolExecutionCommit { idempotencyKey: string; toolName: string; tenantId: string; actorId: string; output: unknown; outboxEvent: ToolExecutionOutboxEvent; }
 export interface ToolExecutionLookup { idempotencyKey: string; tenantId: string; toolName: string; }
 export type IdempotencyState = 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED_RETRYABLE' | 'FAILED_FINAL';
@@ -43,7 +44,7 @@ export class ToolExecutionService {
     const startedAt = Date.now();
     const context = this.observability.correlation ? { ...this.observability.correlation, tenantId: request.context.tenantId } : undefined;
     if (!(await this.dependencies.authorize(request))) {
-      if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.rejected', level: 'WARN', outcome: 'REJECTED', attributes: { toolName: request.tool.name } }));
+      if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.rejected', level: 'WARN', outcome: 'REJECTED', errorCode: 'AUTHORIZATION_DENIED', attributes: { toolName: request.tool.name } }));
       throw new ToolPermissionDeniedError(request.tool.name);
     }
 
@@ -83,7 +84,7 @@ export class ToolExecutionService {
       if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.succeeded', level: 'INFO', outcome: 'SUCCEEDED', durationMs: Date.now() - startedAt, attributes: { toolName: request.tool.name, replayed: false } }));
       return result;
     } catch (error) {
-      if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.failed', level: 'ERROR', outcome: 'FAILED', durationMs: Date.now() - startedAt, errorCode: error instanceof Error ? error.name : 'UNKNOWN_ERROR', attributes: { toolName: request.tool.name } }));
+      if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.failed', level: 'ERROR', outcome: 'FAILED', durationMs: Date.now() - startedAt, errorCode: classifyError(error), attributes: { toolName: request.tool.name } }));
       throw error;
     } finally { this.inFlight.delete(request.idempotencyKey); }
   }
@@ -95,9 +96,10 @@ export class ToolExecutionService {
       await this.dependencies.store?.fail({ idempotencyKey: request.idempotencyKey, tenantId: request.context.tenantId, toolName: request.tool.name, error, retryable: isRetryableError(error) });
       throw error;
     }
+    const correlation = this.observability.correlation;
     const commit: ToolExecutionCommit = {
       idempotencyKey: request.idempotencyKey, toolName: request.tool.name, tenantId: request.context.tenantId, actorId: request.context.actorId, output,
-      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: request.idempotencyKey, toolName: request.tool.name, tenantId: request.context.tenantId, actorId: request.context.actorId, output },
+      outboxEvent: { type: 'tool.execution.completed', idempotencyKey: request.idempotencyKey, toolName: request.tool.name, tenantId: request.context.tenantId, actorId: request.context.actorId, output, ...(correlation ? { correlation: { ...correlation, actorId: correlation.actorId ?? request.context.actorId } } : {}) },
     };
     if (this.dependencies.store) await this.dependencies.store.commit(commit);
     else if (this.dependencies.persistResultAndPublishOutbox) await this.dependencies.persistResultAndPublishOutbox(commit);
