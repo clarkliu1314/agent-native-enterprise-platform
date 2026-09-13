@@ -2,7 +2,7 @@ import type { CorrelationContext, ObservabilityLogger, StructuredLogEvent } from
 import { classifyError, createStructuredLogEvent, safeEmit } from '../packages/observability/src/index.js';
 import type { AdapterRunResult, QueueConsumer, QueuePublisher, RuntimeAdapter } from '../packages/runtime/src/ports.js';
 import { DurableRuntimeService, DurableWorker, OutboxPublisher, PostgresDatabase, PostgresToolRepositories, ToolExecutionService } from '../packages/runtime/src/index.js';
-import type { OutboxMessage, OutboxRepository } from '../packages/outbox/src/publisher.js';
+import type { OutboxRecord, OutboxRepository } from '../packages/runtime/src/repositories.js';
 import { createDurableHandler } from '../apps/api/src/durable-handler.js';
 
 const OUTBOX_LEASE_SECONDS = 300;
@@ -75,59 +75,54 @@ export async function runProductionObservabilityScenario(input: CorrelationConte
 class ScopedProductionOutboxRepository implements OutboxRepository {
   constructor(private readonly db: PostgresDatabase, private readonly runId: string) {}
 
-  async claim(limit: number, workerId: string): Promise<OutboxMessage[]> {
+  async claim(limit: number): Promise<OutboxRecord[]> {
     return this.db.transaction(async (client) => {
-      const result = await client.query(
+      const result = await client.query<OutboxRecord>(
         `WITH candidates AS (
-           SELECT event_id
+           SELECT outbox_id
              FROM outbox_events
             WHERE published_at IS NULL
-              AND status = 'PENDING'
-              AND available_at <= NOW()
-              AND (locked_at IS NULL OR locked_at < NOW() - ($2::integer * INTERVAL '1 second'))
+              AND next_attempt_at <= NOW()
+              AND (claimed_at IS NULL OR claimed_at < NOW() - ($2::integer * INTERVAL '1 millisecond'))
               AND payload->>'runId' = $3
-            ORDER BY created_at, event_id
+            ORDER BY created_at, outbox_id
             FOR UPDATE SKIP LOCKED
             LIMIT $1
          )
-         UPDATE outbox_events e
-            SET locked_at = NOW(), locked_by = $4, attempts = e.attempts + 1
+         UPDATE outbox_events o
+            SET claimed_by = 'production-observability', claimed_at = NOW(), attempts = o.attempts + 1
            FROM candidates c
-          WHERE e.event_id = c.event_id
-       RETURNING e.event_id, e.event_type, e.payload`,
-        [limit, OUTBOX_LEASE_SECONDS, this.runId, workerId],
+          WHERE o.outbox_id = c.outbox_id
+       RETURNING o.outbox_id, o.event_id, o.topic, o.payload, o.attempts`,
+        [limit, OUTBOX_LEASE_SECONDS * 1000, this.runId],
       );
-      return result.rows.map((row) => ({ eventId: String(row.event_id), eventType: String(row.event_type), payload: row.payload }));
+      return result.rows.map((row) => ({ outboxId: String(row.outbox_id), eventId: String(row.event_id), topic: String(row.topic), payload: row.payload, attempts: Number(row.attempts) }));
     });
   }
 
-  async markPublished(eventId: string, workerId: string): Promise<void> {
+  async markPublished(outboxId: string): Promise<void> {
     const result = await this.db.query(
       `UPDATE outbox_events
-          SET published_at = NOW(), status = 'PUBLISHED', locked_at = NULL, locked_by = NULL, last_error = NULL
-        WHERE event_id = $1
+          SET published_at = NOW(), claimed_by = NULL, claimed_at = NULL
+        WHERE outbox_id = $1
           AND published_at IS NULL
-          AND status = 'PENDING'
-          AND locked_by = $2
-          AND locked_at >= NOW() - ($3::integer * INTERVAL '1 second')`,
-      [eventId, workerId, OUTBOX_LEASE_SECONDS],
+          AND claimed_by = 'production-observability'
+          AND claimed_at >= NOW() - ($2::integer * INTERVAL '1 millisecond')`,
+      [outboxId, OUTBOX_LEASE_SECONDS * 1000],
     );
-    if (result.rowCount !== 1) throw new Error(`Outbox acknowledgement rejected: lease lost for event ${eventId}`);
+    if (result.rowCount !== 1) throw new Error(`Outbox acknowledgement rejected: lease lost for event ${outboxId}`);
   }
 
-  async release(eventId: string, workerId: string, error: unknown): Promise<void> {
-    const message = error instanceof Error ? error.message : String(error);
+  async scheduleRetry(outboxId: string, nextAttemptAt: Date): Promise<void> {
     const result = await this.db.query(
       `UPDATE outbox_events
-          SET status = CASE WHEN attempts >= $3 THEN 'DEAD' ELSE 'PENDING' END,
-              available_at = CASE WHEN attempts >= $3 THEN NOW() ELSE NOW() + (LEAST(60, POWER(2, GREATEST(attempts - 1, 0))) * INTERVAL '1 second') END,
-              locked_at = NULL, locked_by = NULL, last_error = $4
-        WHERE event_id = $1
-          AND status = 'PENDING'
-          AND locked_by = $2`,
-      [eventId, workerId, OUTBOX_MAX_ATTEMPTS, message],
+          SET next_attempt_at = $2, claimed_by = NULL, claimed_at = NULL
+        WHERE outbox_id = $1
+          AND published_at IS NULL
+          AND claimed_by = 'production-observability'`,
+      [outboxId, nextAttemptAt],
     );
-    if (result.rowCount !== 1) throw new Error(`Outbox release rejected: lease lost for event ${eventId}`);
+    if (result.rowCount !== 1) throw new Error(`Outbox retry rejected: lease lost for event ${outboxId}`);
   }
 }
 
