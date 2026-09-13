@@ -13,14 +13,13 @@ describe('RecoveryCoordinator observability', () => {
       context: { actorId: 'actor-1', tenantId: 'tenant-1', permissions: ['tool:read'] },
       idempotencyKey: 'idem-recovery-1',
     };
-    const service = {
-      execute: vi.fn().mockResolvedValue({ output: { ok: true }, replayed: true } satisfies ToolExecutionResult),
-      logger,
-      correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', runId: 'run-1', agentId: 'investment-worker' },
-    } as unknown as ToolExecutionService;
+    const service = { execute: vi.fn().mockResolvedValue({ output: { ok: true }, replayed: true } satisfies ToolExecutionResult) } as unknown as ToolExecutionService;
     const candidate: RecoveryCandidate = { request, state: 'FAILED_RETRYABLE' };
 
-    await new RecoveryCoordinator(service).recover(candidate);
+    await new RecoveryCoordinator(service, {
+      logger,
+      correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', runId: 'run-1', agentId: 'investment-worker' },
+    }).recover(candidate);
 
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({ event: 'recovery.claimed' }),
