@@ -37,6 +37,7 @@ describe('RecoveryCoordinator', () => {
 
   it('does not report recovery when scheduling fails', async () => {
     const publish = vi.fn<QueuePublisher['publish']>().mockRejectedValue(new Error('queue unavailable'));
+    const queue: QueuePublisher = { publish };
     const repos = {
       findExpiredRuns: vi.fn(async () => [candidate]),
       reclaimExpiredRun: vi.fn(),
