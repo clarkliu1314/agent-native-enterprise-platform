@@ -1,6 +1,6 @@
-import { createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
+import { classifyError, createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
 
-export interface OutboxMessage { eventId: string; eventType: string; payload: unknown; }
+export interface OutboxMessage { eventId: string; eventType: string; payload: unknown; correlation?: CorrelationContext; }
 export interface OutboxRepository {
   claim(limit: number, workerId: string): Promise<OutboxMessage[]>;
   markPublished(eventId: string, workerId: string): Promise<void>;
@@ -20,19 +20,20 @@ export class OutboxPublisher {
     const messages = await this.repository.claim(limit, workerId);
     let published = 0;
     for (const message of messages) {
+      const context = message.correlation ?? this.observability.correlation;
       try {
         await this.transport(message);
         await this.repository.markPublished(message.eventId, workerId);
         published += 1;
-        if (this.observability.logger && this.observability.correlation) safeEmit(this.observability.logger, createStructuredLogEvent({
-          context: this.observability.correlation, event: 'outbox.published', level: 'INFO', outcome: 'PUBLISHED',
+        if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({
+          context, event: 'outbox.published', level: 'INFO', outcome: 'PUBLISHED',
           attributes: { eventType: message.eventType },
         }));
       } catch (error) {
         await this.repository.release(message.eventId, workerId, error);
-        if (this.observability.logger && this.observability.correlation) safeEmit(this.observability.logger, createStructuredLogEvent({
-          context: this.observability.correlation, event: 'outbox.failed', level: 'ERROR', outcome: 'FAILED',
-          errorCode: error instanceof Error ? error.name : 'UNKNOWN_ERROR', attributes: { eventType: message.eventType },
+        if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({
+          context, event: 'outbox.failed', level: 'ERROR', outcome: 'FAILED',
+          errorCode: classifyError(error) === 'INTERNAL_ERROR' ? 'OUTBOX_PUBLISH_FAILED' : classifyError(error), attributes: { eventType: message.eventType },
         }));
       }
     }
