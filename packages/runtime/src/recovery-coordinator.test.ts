@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RunView } from '@agent-native/runtime-contract/durable';
 import type { RuntimeAdapter, QueuePublisher } from './ports';
-import type { DurableRepositories, RunClaim } from './repositories';
+import type { DurableRepositories } from './repositories';
 import { RecoveryCoordinator } from './recovery-coordinator';
 
 const candidate: RunView = {
@@ -17,36 +17,36 @@ const adapter: RuntimeAdapter = {
 };
 
 describe('RecoveryCoordinator', () => {
-  it('reclaims expired work and publishes the new fencing ownership', async () => {
+  it('schedules expired work without creating a competing claim or fencing protocol', async () => {
     const publish = vi.fn<QueuePublisher['publish']>().mockResolvedValue();
     const queue: QueuePublisher = { publish };
-    const claim: RunClaim = { run: { ...candidate, fencingToken: 4n, attempt: 3 }, fencingToken: 4n };
     const repos = {
       findExpiredRuns: vi.fn(async () => [candidate]),
-      reclaimExpiredRun: vi.fn(async () => claim),
+      reclaimExpiredRun: vi.fn(),
     } as unknown as DurableRepositories;
     const coordinator = new RecoveryCoordinator(repos, adapter, 30_000, queue);
 
     const result = await coordinator.recoverExpired(1);
 
-    expect(result).toEqual([{ runId: 'run-expired', recovered: true, fencingToken: 4n, action: 'RECLAIMED' }]);
+    expect(result).toEqual([{ runId: 'run-expired', recovered: true, action: 'RECLAIMED' }]);
     expect(publish).toHaveBeenCalledTimes(1);
     expect(publish.mock.calls[0][0]).toBe('agent.run');
-    expect(publish.mock.calls[0][1]).toMatchObject({ runId: 'run-expired', recovered: true, fencingToken: '4' });
-    expect(repos.reclaimExpiredRun).toHaveBeenCalledWith('run-expired', expect.stringMatching(/^recovery:/), 30_000);
+    expect(publish.mock.calls[0][1]).toEqual({ runId: 'run-expired', recovered: true });
+    expect(repos.reclaimExpiredRun).not.toHaveBeenCalled();
   });
 
-  it('does not publish when the atomic reclaim loses the race', async () => {
-    const publish = vi.fn<QueuePublisher['publish']>().mockResolvedValue();
+  it('does not report recovery when scheduling fails', async () => {
+    const publish = vi.fn<QueuePublisher['publish']>().mockRejectedValue(new Error('queue unavailable'));
+    const queue: QueuePublisher = { publish };
     const repos = {
       findExpiredRuns: vi.fn(async () => [candidate]),
-      reclaimExpiredRun: vi.fn(async () => null),
+      reclaimExpiredRun: vi.fn(),
     } as unknown as DurableRepositories;
-    const coordinator = new RecoveryCoordinator(repos, adapter, 30_000, { publish });
+    const coordinator = new RecoveryCoordinator(repos, adapter, 30_000, queue);
 
     const result = await coordinator.recoverExpired(1);
 
-    expect(result).toEqual([{ runId: 'run-expired', recovered: false, action: 'SKIPPED' }]);
-    expect(publish).not.toHaveBeenCalled();
+    expect(result).toEqual([{ runId: 'run-expired', recovered: false, action: 'FAILED' }]);
+    expect(repos.reclaimExpiredRun).not.toHaveBeenCalled();
   });
 });

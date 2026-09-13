@@ -1,8 +1,15 @@
+import type { RunView } from '@agent-native/runtime-contract/durable';
+
+/**
+ * Investment domain depends only on durable admission, resume and observation.
+ * Execution, leasing and fencing are intentionally absent from this port.
+ */
 export interface InvestmentWorkflowRuntime {
-  startRun(input: { tenantId: string; opportunityId: string; idempotencyKey: string }): Promise<{
-    runId: string;
-    nextStep?: number;
-  }>;
-  executeTurn(input: { runId: string; fencingToken: bigint; input: unknown }): Promise<{ status: 'CONTINUE' | 'WAITING' | 'COMPLETED' }>;
-  resumeRun(input: { runId: string; input: unknown }): Promise<void>;
+  createRun(input: {
+    tenantId: string;
+    opportunityId: string;
+    idempotencyKey: string;
+  }): Promise<{ run: RunView; replayed: boolean }>;
+  approveRun(runId: string, approvalId: string): Promise<RunView>;
+  getRun(runId: string): Promise<RunView>;
 }

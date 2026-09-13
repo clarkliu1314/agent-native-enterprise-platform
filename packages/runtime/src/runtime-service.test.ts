@@ -15,11 +15,12 @@ class FakeRepos implements DurableRepositories {
   events: RuntimeEventView[] = [];
   checkpoints: CheckpointEnvelope[] = [];
   failAtomicTransition = false;
+  expired = false;
   async admitRun(input: { command: CreateRunCommand; commandHash: string; runId: string; eventId: string }) { this.idempotency = { key: input.command.idempotencyKey ?? `run:${input.runId}`, commandHash: input.commandHash, runId: input.runId }; this.current = { ...this.current, runId: input.runId, agentId: input.command.agentId, input: input.command.input }; return this.current; }
   async getRun(id: string) { return id === this.current.runId ? this.current : null; }
   async getIdempotency(key: string) { return this.idempotency?.key === key ? this.idempotency : null; }
   async insertIdempotency(record: IdempotencyRecord) { this.idempotency = record; }
-  async claimRun() { this.current = { ...this.current, state: 'RUNNING', fencingToken: this.current.fencingToken + 1n, attempt: this.current.attempt + 1 }; return { run: this.current, fencingToken: this.current.fencingToken } as RunClaim; }
+  async claimRun() { if (this.current.state !== 'QUEUED') return null; this.current = { ...this.current, state: 'RUNNING', fencingToken: this.current.fencingToken + 1n, attempt: this.current.attempt + 1 }; return { run: this.current, fencingToken: this.current.fencingToken } as RunClaim; }
   async renewLease() { return true; }
   async transitionRun(input: { runId: string; fencingToken?: bigint; from: RunView['state']; to: RunView['state']; owner?: string; error?: string }) { expect(this.current.state).toBe(input.from); this.current = { ...this.current, state: input.to }; return this.current; }
   async transitionRunAndEmit(input: { runId: string; fencingToken?: bigint; from: RunView['state']; to: RunView['state']; owner?: string; error?: string; eventType: string; eventPayload: unknown; topic: string }) {
@@ -41,8 +42,8 @@ class FakeRepos implements DurableRepositories {
   async createOutbox() {}
   async saveCheckpoint(cp: CheckpointEnvelope) { this.checkpoints.push(cp); }
   async getLatestCheckpoint() { return this.checkpoints.at(-1) ?? null; }
-  async findExpiredRuns() { return []; }
-  async reclaimExpiredRun() { return null; }
+  async findExpiredRuns() { return this.expired ? [this.current] : []; }
+  async reclaimExpiredRun() { if (!this.expired || this.current.state !== 'RUNNING') return null; this.expired = false; this.current = { ...this.current, fencingToken: this.current.fencingToken + 1n, attempt: this.current.attempt + 1 }; return { run: this.current, fencingToken: this.current.fencingToken } as RunClaim; }
   async saveIdempotencyResponse() {}
 }
 
@@ -73,6 +74,19 @@ describe('DurableRuntimeService', () => {
     expect(result.terminal).toBe(true);
     expect(result.run.state).toBe('SUCCEEDED');
     expect(repos.events.map((event) => event.type)).toContain('RUN_SUCCEEDED');
+  });
+
+  it('reclaims an expired RUNNING run inside the durable runtime claim boundary', async () => {
+    const repos = new FakeRepos();
+    repos.current = run('RUNNING');
+    repos.expired = true;
+    const service = new DurableRuntimeService(repos, { adapter });
+
+    const claimed = await service.resumeRun(repos.current.runId, 'recovery-worker');
+
+    expect(claimed.state).toBe('RUNNING');
+    expect(claimed.fencingToken).toBe(2n);
+    expect(claimed.attempt).toBe(2);
   });
 
   it('does not claim an already terminal run as new work', async () => {

@@ -5,8 +5,6 @@ export interface InvestmentWorkflowStartResult {
   opportunityId: string;
 }
 
-const WORKFLOW_STEPS = ['research', 'due_diligence', 'analysis', 'recommendation'] as const;
-
 export class InvestmentWorkflow {
   constructor(private readonly runtime: InvestmentWorkflowRuntime) {}
 
@@ -14,26 +12,19 @@ export class InvestmentWorkflow {
     tenantId: string;
     opportunityId: string;
     idempotencyKey: string;
-    fencingToken: bigint;
   }): Promise<InvestmentWorkflowStartResult> {
-    const { fencingToken, ...admission } = input;
-    const run = await this.runtime.startRun(admission);
-    const startAt = Math.max(0, Math.min(run.nextStep ?? 0, WORKFLOW_STEPS.length));
+    const result = await this.runtime.createRun(input);
 
-    for (let index = startAt; index < WORKFLOW_STEPS.length; index += 1) {
-      const step = WORKFLOW_STEPS[index];
-      const result = await this.runtime.executeTurn({
-        runId: run.runId,
-        fencingToken,
-        input: { opportunityId: input.opportunityId, step },
-      });
-      if (result.status === 'WAITING' || result.status === 'COMPLETED') break;
-    }
-
-    return { runId: run.runId, opportunityId: input.opportunityId };
+    // Admission is intentionally bounded: this method must never claim a run
+    // or execute a workflow step. DurableWorker owns execution and receives the
+    // authoritative fencing token from the durable runtime claim.
+    return { runId: result.run.runId, opportunityId: input.opportunityId };
   }
 
   async resume(input: { runId: string; approval: 'APPROVE' | 'REJECT' }): Promise<void> {
-    await this.runtime.resumeRun({ runId: input.runId, input: { step: 'approval', approval: input.approval } });
+    if (input.approval !== 'APPROVE') {
+      throw new Error(`Unsupported investment workflow resume: ${input.runId}`);
+    }
+    await this.runtime.approveRun(input.runId, `investment-approval:${input.runId}`);
   }
 }

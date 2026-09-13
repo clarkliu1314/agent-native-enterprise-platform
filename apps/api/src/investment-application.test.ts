@@ -1,25 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { InvestmentApplicationService } from '../../../packages/investment-domain/src/application-service';
 import type { InvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/runtime-port';
+import type { RunView } from '@agent-native/runtime-contract/durable';
 import { InvestmentApiApplicationAdapter } from './investment-application';
 
-function db() {
+function runView(overrides: Partial<RunView> = {}): RunView {
   return {
-    query: vi.fn().mockResolvedValue({ rows: [{ run_id: 'run-1', state: 'WAITING', metadata: { tenantId: 'tenant-a', nextStep: 4 } }], rowCount: 1 }),
-    transaction: vi.fn(),
-  };
+    runId: 'run-1',
+    state: 'QUEUED',
+    version: 0,
+    attempt: 0,
+    fencingToken: 0n,
+    metadata: { tenantId: 'tenant-a', opportunityId: 'opp-1', nextStep: 0 },
+    ...overrides,
+  } as RunView;
 }
 
 describe('investment API application adapter', () => {
   it('delegates opportunity commands to the durable investment service', async () => {
-    const database = db();
+    const database = { query: vi.fn(), transaction: vi.fn() };
     const service = {
       createOpportunity: vi.fn().mockResolvedValue({ opportunityId: 'opp-1' }),
       advanceStage: vi.fn().mockResolvedValue({ opportunityId: 'opp-1', stage: 'SCREENING' }),
       approve: vi.fn().mockResolvedValue({ decisionId: 'decision-1' }),
       reject: vi.fn().mockResolvedValue({ decisionId: 'decision-2' }),
     } as unknown as InvestmentApplicationService;
-    const workflow = { startRun: vi.fn(), executeTurn: vi.fn(), resumeRun: vi.fn() } as unknown as InvestmentWorkflowRuntime;
+    const workflow: InvestmentWorkflowRuntime = {
+      createRun: vi.fn(),
+      approveRun: vi.fn(),
+      getRun: vi.fn(),
+    };
     const adapter = new InvestmentApiApplicationAdapter(database as never, service, workflow);
 
     await adapter.createOpportunity({ tenantId: 'tenant-a', opportunityId: 'opp-1' });
@@ -31,25 +41,31 @@ describe('investment API application adapter', () => {
     expect(service.approve).toHaveBeenCalledOnce();
   });
 
-  it('uses durable workflow runtime and enforces tenant ownership for status and resume', async () => {
-    const database = db();
-    const workflow = { startRun: vi.fn().mockResolvedValue({ runId: 'run-1', nextStep: 0 }), executeTurn: vi.fn(), resumeRun: vi.fn().mockResolvedValue(undefined) } as unknown as InvestmentWorkflowRuntime;
+  it('admits workflow work and resumes only through the durable runtime contract', async () => {
+    const database = { query: vi.fn(), transaction: vi.fn() };
+    const workflow: InvestmentWorkflowRuntime = {
+      createRun: vi.fn().mockResolvedValue({ run: runView(), replayed: false }),
+      approveRun: vi.fn().mockResolvedValue(runView({ state: 'QUEUED' })),
+      getRun: vi.fn().mockResolvedValue(runView({ state: 'WAITING', metadata: { tenantId: 'tenant-a', opportunityId: 'opp-1', nextStep: 4 } })),
+    };
     const adapter = new InvestmentApiApplicationAdapter(database as never, undefined, workflow);
 
-    await expect(adapter.startWorkflow({ tenantId: 'tenant-a', opportunityId: 'opp-1', idempotencyKey: 'workflow-1' })).resolves.toEqual({ runId: 'run-1', nextStep: 0 });
+    await expect(adapter.startWorkflow({ tenantId: 'tenant-a', opportunityId: 'opp-1', idempotencyKey: 'workflow-1' })).resolves.toEqual({ runId: 'run-1', opportunityId: 'opp-1' });
     await expect(adapter.getWorkflow('run-1', 'tenant-a')).resolves.toEqual({ runId: 'run-1', state: 'WAITING', nextStep: 4 });
     await adapter.resumeWorkflow({ runId: 'run-1', tenantId: 'tenant-a', approval: 'APPROVE' });
 
-    expect(workflow.startRun).toHaveBeenCalledWith({ tenantId: 'tenant-a', opportunityId: 'opp-1', idempotencyKey: 'workflow-1' });
-    expect(workflow.resumeRun).toHaveBeenCalledWith(expect.objectContaining({ runId: 'run-1' }));
+    expect(workflow.createRun).toHaveBeenCalledWith({ tenantId: 'tenant-a', opportunityId: 'opp-1', idempotencyKey: 'workflow-1' });
+    expect(workflow.approveRun).toHaveBeenCalledWith('run-1', 'investment-approval:run-1');
   });
 
   it('fails closed when workflow status belongs to another tenant', async () => {
-    const database = {
-      query: vi.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
-      transaction: vi.fn(),
+    const workflow: InvestmentWorkflowRuntime = {
+      createRun: vi.fn(),
+      approveRun: vi.fn(),
+      getRun: vi.fn().mockResolvedValue(runView({ metadata: { tenantId: 'tenant-a', opportunityId: 'opp-1', nextStep: 0 } })),
     };
-    const adapter = new InvestmentApiApplicationAdapter(database as never, undefined, { startRun: vi.fn(), executeTurn: vi.fn(), resumeRun: vi.fn() } as unknown as InvestmentWorkflowRuntime);
+    const adapter = new InvestmentApiApplicationAdapter({ query: vi.fn(), transaction: vi.fn() } as never, undefined, workflow);
+
     await expect(adapter.getWorkflow('run-1', 'tenant-b')).rejects.toThrow('Investment workflow not found');
   });
 });
