@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classifyError,
   createStructuredLogEvent,
   type CorrelationContext,
   type ObservabilityLogger,
@@ -18,50 +19,37 @@ describe('observability contract', () => {
   };
 
   it('requires request and trace correlation for every lifecycle event', () => {
-    const event = createStructuredLogEvent({
-      context,
-      event: 'run.started',
-      level: 'INFO',
-      outcome: 'STARTED',
-    });
-
+    const event = createStructuredLogEvent({ context, event: 'run.started', level: 'INFO', outcome: 'STARTED' });
     expect(event.context).toEqual(context);
     expect(event.event).toBe('run.started');
     expect(event.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it('accepts only stable lifecycle event names', () => {
-    expect(() =>
-      createStructuredLogEvent({
-        context,
-        event: 'run.started',
-        level: 'INFO',
-      }),
-    ).not.toThrow();
+    expect(() => createStructuredLogEvent({ context, event: 'run.started', level: 'INFO' })).not.toThrow();
+    expect(() => createStructuredLogEvent({ context, event: 'arbitrary.user.event', level: 'INFO' })).toThrow(/unknown observability event/i);
+  });
 
-    expect(() =>
-      createStructuredLogEvent({
-        context,
-        event: 'arbitrary.user.event',
-        level: 'INFO',
-      }),
-    ).toThrow(/unknown observability event/i);
+  it('classifies operational errors into stable telemetry codes', () => {
+    const cases = [
+      ['ToolPermissionDeniedError', 'AUTHORIZATION_DENIED'],
+      ['IdempotencyConflictError', 'IDEMPOTENCY_CONFLICT'],
+      ['StaleFencingTokenError', 'STALE_FENCING_TOKEN'],
+      ['RunNotFoundError', 'RUN_NOT_FOUND'],
+      ['InvalidStateTransitionError', 'INVALID_STATE_TRANSITION'],
+      ['RecoveryLeaseLostError', 'RECOVERY_LEASE_LOST'],
+      ['OutboxPublishError', 'OUTBOX_PUBLISH_FAILED'],
+      ['UnexpectedError', 'INTERNAL_ERROR'],
+    ] as const;
+    for (const [name, expected] of cases) {
+      const error = new Error('implementation-specific message');
+      error.name = name;
+      expect(classifyError(error)).toBe(expected);
+    }
   });
 
   it('isolates logger failures from the business path', () => {
-    const logger: ObservabilityLogger = {
-      emit: () => {
-        throw new Error('telemetry unavailable');
-      },
-    };
-
-    expect(() =>
-      safeEmit(logger, createStructuredLogEvent({
-        context,
-        event: 'run.succeeded',
-        level: 'INFO',
-        outcome: 'SUCCEEDED',
-      })),
-    ).not.toThrow();
+    const logger: ObservabilityLogger = { emit: () => { throw new Error('telemetry unavailable'); } };
+    expect(() => safeEmit(logger, createStructuredLogEvent({ context, event: 'run.succeeded', level: 'INFO', outcome: 'SUCCEEDED' }))).not.toThrow();
   });
 });
