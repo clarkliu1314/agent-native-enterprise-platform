@@ -6,23 +6,27 @@ import {
 
 describe('observability metrics contract', () => {
   it('rejects unbounded identifiers as metric labels', () => {
-    expect(() => assertBoundedMetricLabels({ runId: 'run-1' })).toThrow(
-      /unbounded metric label/i,
-    );
-    expect(() => assertBoundedMetricLabels({ traceId: 'trace-1' })).toThrow(
-      /unbounded metric label/i,
-    );
+    expect(() => assertBoundedMetricLabels({ runId: 'run-1' })).toThrow(/unbounded metric label/i);
+    expect(() => assertBoundedMetricLabels({ traceId: 'trace-1' })).toThrow(/unbounded metric label/i);
+    expect(() => assertBoundedMetricLabels({ requestId: 'req-1' })).toThrow(/unbounded metric label/i);
   });
 
   it('accepts bounded operational labels', () => {
-    expect(() =>
-      assertBoundedMetricLabels({
-        agent: 'investment-worker',
-        state: 'RUNNING',
-        outcome: 'SUCCEEDED',
-        error_code: 'INTERNAL_ERROR',
-      }),
-    ).not.toThrow();
+    expect(() => assertBoundedMetricLabels({
+      tenant: 'fund-1',
+      agent: 'investment-worker',
+      state: 'RUNNING',
+      outcome: 'SUCCEEDED',
+      error_code: 'INTERNAL_ERROR',
+      tool: 'crm.create_company',
+    })).not.toThrow();
+  });
+
+  it('rejects non-canonical metric names', () => {
+    expect(() => {
+      const metrics = new MemoryObservabilityMetrics();
+      metrics.increment('custom_metric_total');
+    }).toThrow(/canonical metric/i);
   });
 
   it('records counters, observations, and gauges without requiring a vendor SDK', () => {
