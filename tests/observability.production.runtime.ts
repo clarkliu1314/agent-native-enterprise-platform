@@ -8,6 +8,7 @@ import { createDurableHandler } from '../apps/api/src/durable-handler.js';
 const OUTBOX_LEASE_SECONDS = 300;
 
 export interface ProductionScenarioResult { httpStatus: number; events: StructuredLogEvent[]; serializedTelemetry: string; businessResult: { status: string }; telemetryErrors: number; durableRun: { runId: string; state: string }; durableToolCall: { toolName: string; status: string }; publishedOutboxCount: number; }
+export interface ProductionRecoveryScenarioResult { businessResult: { status: string }; workerStarts: number; retriedOutbox: number; deliveryContexts: CorrelationContext[]; durableRun: { runId: string; state: string }; }
 
 export async function runProductionObservabilityScenario(input: CorrelationContext & { toolName?: string; secretInput?: string; failTelemetry?: boolean }): Promise<ProductionScenarioResult> {
   const db = new PostgresDatabase();
@@ -76,6 +77,66 @@ export async function runProductionObservabilityScenario(input: CorrelationConte
   const publishedOutboxCount = Number((await db.query<{ count: string }>('SELECT COUNT(*)::text AS count FROM outbox_events WHERE (payload->>\'runId\') = $1', [runId])).rows[0]?.count ?? 0);
   await db.pool.end();
   return { httpStatus: response.status === 202 ? 200 : response.status, events, serializedTelemetry: JSON.stringify(events), businessResult: { status: run.state }, telemetryErrors, durableRun: { runId: run.runId, state: run.state }, durableToolCall: { toolName: String(toolCall?.toolName ?? toolName), status: String(toolCall?.status ?? 'UNKNOWN') }, publishedOutboxCount };
+}
+
+export async function runProductionObservabilityRecoveryScenario(input: CorrelationContext): Promise<ProductionRecoveryScenarioResult> {
+  const db = new PostgresDatabase();
+  const repos = new PostgresToolRepositories(db);
+  const events: StructuredLogEvent[] = [];
+  const deliveryContexts: CorrelationContext[] = [];
+  const logger: ObservabilityLogger = { emit: (event) => events.push(event) };
+  const runId = input.runId;
+  const idempotencyKey = `prod-observability:${runId}`;
+  await cleanupProductionScenario(db, runId, idempotencyKey);
+
+  const adapter: RuntimeAdapter = {
+    name: 'production-observability-recovery-adapter', version: '1.0.0',
+    async run({ run, signal }): Promise<AdapterRunResult> {
+      if (signal?.aborted) return { kind: 'FAILED', error: 'execution_aborted' };
+      const correlation = readCorrelation(run.metadata, run.runId, run.agentId);
+      const tool = new ToolExecutionService(repos, { authorize: async () => true }, { invoke: async ({ toolName, input: toolInput }) => ({ status: 'SUCCEEDED', toolName, received: toolInput }) });
+      await tool.execute({ runId: run.runId, agentId: run.agentId, owner: 'worker-prod-restart-e2e', fencingToken: run.fencingToken, toolCallId: `${runId}:tool:1`, toolName: 'crm.create_company', kind: 'SIDE_EFFECTING', input: { secret: 'restart-secret' }, idempotencyKey: `tool:${runId}` });
+      await repos.appendEventAndOutbox({ runId: run.runId, fencingToken: run.fencingToken, type: 'TOOL_EXECUTION_SUCCEEDED', payload: { toolName: 'crm.create_company' }, topic: 'agent.tool' });
+      safeEmit(logger, createStructuredLogEvent({ context: { ...correlation, runId: run.runId, agentId: run.agentId }, event: 'tool.succeeded', level: 'INFO', outcome: 'SUCCEEDED' }));
+      return { kind: 'SUCCEEDED', output: { status: 'SUCCEEDED' } };
+    },
+    serializeCheckpoint: (state) => new TextEncoder().encode(JSON.stringify(state)),
+    deserializeCheckpoint: (payload) => JSON.parse(new TextDecoder().decode(payload)),
+  };
+  const runtime = new DurableRuntimeService(repos, { adapter, ids: { next: (prefix) => prefix === 'run' ? runId : `${runId}:${prefix}:restart` } });
+  let failFirstPublish = true;
+  const publishedMessages: Array<{ topic: string; payload: unknown }> = [];
+  const queue: QueuePublisher & QueueConsumer = {
+    async publish(topic, payload) {
+      if (topic === 'agent.run' && failFirstPublish) {
+        failFirstPublish = false;
+        throw new Error('simulated outbox transport failure');
+      }
+      const durablePayload = payload as Record<string, unknown>;
+      const durableRunId = typeof durablePayload.runId === 'string' ? durablePayload.runId : undefined;
+      const durableRun = durableRunId ? await runtime.getRun(durableRunId) : undefined;
+      const original = durableRun ? readCorrelation(durableRun.metadata, durableRun.runId, durableRun.agentId) : readCorrelation(durablePayload, runId, 'investment-worker');
+      const correlation = topic === 'agent.run' ? { ...original, requestId: `delivery-${original.requestId}` } : original;
+      if (topic === 'agent.run') deliveryContexts.push(correlation);
+      publishedMessages.push({ topic, payload: topic === 'agent.run' ? { ...durablePayload, correlation } : payload });
+      safeEmit(logger, createStructuredLogEvent({ context: correlation, event: 'outbox.published', level: 'INFO', outcome: 'PUBLISHED' }));
+    },
+    async consume(handler) { const messages = publishedMessages.splice(0, publishedMessages.length); for (const message of messages) await handler(message); },
+  };
+  const outbox = new OutboxPublisher(new ScopedProductionOutboxRepository(db, runId), queue);
+  const handler = createDurableHandler(runtime, { owner: 'api-prod-restart-e2e', logger });
+  await handler(new Request('https://example.test/runs', { method: 'POST', headers: { 'content-type': 'application/json', 'x-request-id': input.requestId, 'x-trace-id': input.traceId, 'x-tenant-id': input.tenantId, 'idempotency-key': idempotencyKey }, body: JSON.stringify({ agentId: 'investment-worker', input: { secret: 'restart-secret' }, executionMode: 'async' }) }));
+  const firstPublish = await outbox.publishBatch();
+  const workerOne = new DurableWorker(runtime, queue, { owner: 'worker-prod-restart-e2e', logger, correlation: input });
+  await workerOne.start();
+  await db.query('UPDATE outbox_events SET next_attempt_at = NOW() WHERE payload->>\'runId\' = $1 AND published_at IS NULL', [runId]);
+  await outbox.publishBatch();
+  const workerTwo = new DurableWorker(runtime, queue, { owner: 'worker-prod-restart-e2e', logger });
+  await workerTwo.start();
+  const run = await runtime.getRun(runId);
+  await db.pool.end();
+  const workerStarts = 2;
+  return { businessResult: { status: run.state }, workerStarts, retriedOutbox: firstPublish.retried, deliveryContexts, durableRun: { runId: run.runId, state: run.state } };
 }
 
 /** Test-only durable outbox view that scopes claims without claiming unrelated shared-test rows. */
