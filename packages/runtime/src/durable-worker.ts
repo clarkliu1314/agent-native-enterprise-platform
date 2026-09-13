@@ -1,4 +1,5 @@
 import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
+import { createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
 import type { QueueConsumer } from './ports';
 
 export interface DurableWorkerOptions {
@@ -8,18 +9,12 @@ export interface DurableWorkerOptions {
   heartbeat?: {
     start(input: { runId: string; owner: string; fencingToken: bigint }): { stop(): void };
   };
+  logger?: ObservabilityLogger;
+  correlation?: CorrelationContext;
 }
 
-export interface DurableRunMessage {
-  runId: string;
-}
+export interface DurableRunMessage { runId: string; }
 
-/**
- * Queue-driven worker boundary. The queue carries only durable work identity;
- * RuntimeFacade performs the authoritative claim and returns the fencing token
- * internally. This prevents callers or queue publishers from forging lease
- * ownership or fencing metadata.
- */
 export class DurableWorker {
   private readonly executionSliceMs: number;
   private readonly now: () => Date;
@@ -42,7 +37,25 @@ export class DurableWorker {
   }
 
   async process(runId: string): Promise<void> {
-    const deadlineAt = new Date(this.now().getTime() + this.executionSliceMs);
-    await this.runtime.executeRunBounded(runId, this.options.owner, deadlineAt);
+    const startedAt = this.now();
+    const context = this.options.correlation ? { ...this.options.correlation, runId } : undefined;
+    if (this.options.logger && context) {
+      safeEmit(this.options.logger, createStructuredLogEvent({ context, event: 'run.started', level: 'INFO', outcome: 'STARTED' }));
+    }
+    const deadlineAt = new Date(startedAt.getTime() + this.executionSliceMs);
+    try {
+      await this.runtime.executeRunBounded(runId, this.options.owner, deadlineAt);
+      if (this.options.logger && context) safeEmit(this.options.logger, createStructuredLogEvent({
+        context, event: 'run.succeeded', level: 'INFO', outcome: 'SUCCEEDED',
+        durationMs: Math.max(0, this.now().getTime() - startedAt.getTime()),
+      }));
+    } catch (error) {
+      if (this.options.logger && context) safeEmit(this.options.logger, createStructuredLogEvent({
+        context, event: 'run.failed', level: 'ERROR', outcome: 'FAILED',
+        durationMs: Math.max(0, this.now().getTime() - startedAt.getTime()),
+        errorCode: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
+      }));
+      throw error;
+    }
   }
 }
