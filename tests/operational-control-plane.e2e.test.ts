@@ -42,7 +42,8 @@ describe('Stage 12.2 operational control plane', () => {
   });
   it('retry delegates to existing recovery semantics rather than manufacturing RUNNING', async () => {
     const recovery = { retry: async (runId: string) => ({ runId }), recover: async (runId: string) => ({ runId }) };
-    const result = await new OperationalControlService({ recovery }).execute({ ...baseCommand('RETRY'), idempotencyKey: 'idem-retry', commandId: 'cmd-retry' });
+    const service = new OperationalControlService({ repository: new InMemoryOperationalControlRepository(state({ runState: 'FAILED' })), recovery });
+    const result = await service.execute({ ...baseCommand('RETRY'), idempotencyKey: 'idem-retry', commandId: 'cmd-retry' });
     expect(result.delegatedToRecovery).toBe(true); expect(result.runStateMutation).toBe(false); expect(result.eventsCreated).toBe(1);
   });
   it('rejects retry while a run is not FAILED so the control plane cannot manufacture a retryable candidate', async () => {
@@ -57,7 +58,8 @@ describe('Stage 12.2 operational control plane', () => {
   });
   it('recover delegates to existing recovery candidate processing without running inside HTTP', async () => {
     let calls = 0; const recovery = { retry: async (runId: string) => ({ runId }), recover: async (runId: string) => { calls += 1; return { runId }; } };
-    const result = await new OperationalControlService({ recovery }).execute({ ...baseCommand('RECOVER'), idempotencyKey: 'idem-recover', commandId: 'cmd-recover' });
+    const service = new OperationalControlService({ repository: new InMemoryOperationalControlRepository(state({ runState: 'FAILED' })), recovery });
+    const result = await service.execute({ ...baseCommand('RECOVER'), idempotencyKey: 'idem-recover', commandId: 'cmd-recover' });
     expect(result.delegatedToRecovery).toBe(true); expect(calls).toBe(1); expect(result.executedInHttp).toBe(false);
   });
   it('concurrent control commands serialize correctly', async () => {
