@@ -1,6 +1,15 @@
 # Stage 12.3 — Auditability Specification
 
-**Status:** DESIGN BASELINE — implementation pending.
+**Status:** CLOSED / COMPLETE.
+
+## Closeout evidence
+
+- Feature branch: `feat/stage12-3-auditability`
+- Final feature-branch verification: **Run #762 — GREEN** on commit `f12a1df5b40009797082085658eb058eb4e6d7d1`.
+- Pull request: **PR #28 — MERGED**.
+- Merge commit: `69f356bc2af3d4e8481ee3b1b47f48d73d2181e8`.
+- Final mainline verification: **Run #763 — GREEN** on the merge SHA above.
+- Run #763 required a rerun of the Compose Smoke job after a transient Docker Hub `auth.docker.io` connection reset; no application-code change was made for that infrastructure failure.
 
 ## Goal
 
@@ -65,11 +74,11 @@ Every accepted and rejected control command is auditable, including PAUSE, RESUM
 
 ### Durable business/runtime actions
 
-Auditability extends to material durable state transitions already represented by the existing event stream, including run lifecycle transitions, recovery outcomes, and material investment decision transitions. The implementation should reuse existing durable events rather than introduce parallel command execution.
+Auditability extends to material durable state transitions already represented by the existing event stream, including run lifecycle transitions, recovery outcomes, and material investment decision transitions. The implementation reuses existing durable events rather than introducing parallel command execution.
 
 ### Rejected operations
 
-Authorization, tenant-isolation, invalid-state, concurrency, and other policy rejections should be auditable without exposing the existence or contents of cross-tenant resources. Rejected cross-tenant requests must never reveal target-run state.
+Authorization, tenant-isolation, invalid-state, concurrency, and other policy rejections are auditable without exposing the existence or contents of cross-tenant resources. Rejected cross-tenant requests never reveal target-run state.
 
 ## Event and audit relationship
 
@@ -79,19 +88,19 @@ The implementation uses a single durable transaction boundary:
 
 The audit record references the originating event or command identifier through safe scalar metadata. It does not replace `agent_events`, and `agent_events` do not become mutable audit records.
 
-For existing events that predate Stage 12.3, no backfill is required unless explicitly added as a bounded migration task. New auditable events must satisfy the invariant from the first commit onward.
+For existing events that predate Stage 12.3, no backfill is required unless explicitly added as a bounded migration task. New auditable events satisfy the invariant from the first commit onward.
 
 ## Immutability
 
-Audit rows are append-only. The application exposes no update/delete operation for audit records. Database permissions/migration design should prevent ordinary application paths from modifying or deleting committed audit facts.
+Audit rows are append-only. The application exposes no update/delete operation for audit records. Database permissions/migration design prevents ordinary application paths from modifying or deleting committed audit facts.
 
 Queries return stable records ordered by `occurredAt` plus `auditId` (or another deterministic tie-breaker). The query contract cannot mutate or reinterpret historical records.
 
 ## Tenant isolation and authorization
 
-Audit queries require an explicit tenant scope and an actor authorized to view that tenant's audit trail. Cross-tenant access must return the same non-disclosing authorization behavior used elsewhere.
+Audit queries require an explicit tenant scope and an actor authorized to view that tenant's audit trail. Cross-tenant access returns the same non-disclosing authorization behavior used elsewhere.
 
-The audit write path derives tenant/actor identity from authenticated command/application context and must not trust arbitrary tenant or actor values from an unvalidated request body.
+The audit write path derives tenant/actor identity from authenticated command/application context and does not trust arbitrary tenant or actor values from an unvalidated request body.
 
 ## Sensitive-data protection
 
@@ -119,7 +128,7 @@ The initial query surface remains deliberately narrow: tenant-scoped list/search
 
 ## TDD / RED gate
 
-Before implementation, tests must fail for:
+Before implementation, tests were required to fail for:
 
 1. accepted PAUSE/RESUME/CANCEL control produces exactly one immutable audit record;
 2. retry/recover produces an auditable recovery decision without manufacturing `RUNNING`;
@@ -136,4 +145,6 @@ Before implementation, tests must fail for:
 
 ## Acceptance criteria
 
-Stage 12.3 is complete only when the framework-neutral audit contract and PostgreSQL repository are implemented; accepted and rejected operational controls have deterministic audit semantics; material durable business/runtime transitions are auditable without a second runtime; audit + business event + outbox atomicity is proven; append-only/immutability is enforced by application and database boundaries; tenant isolation and audit-query authorization are proven; sensitive-data deny-list tests remain GREEN; idempotency, retry, recovery, crash, and concurrency audit invariants are proven; a production-composition E2E test proves command → durable mutation → audit record → outbox/publication path; existing 64/64 benchmark and full suite remain GREEN; and Typecheck, API Build, Deployment Boundary, and Compose Smoke remain GREEN.
+Stage 12.3 is complete when the framework-neutral audit contract and PostgreSQL repository are implemented; accepted and rejected operational controls have deterministic audit semantics; material durable business/runtime transitions are auditable without a second runtime; audit + business event + outbox atomicity is proven; append-only/immutability is enforced by application and database boundaries; tenant isolation and audit-query authorization are proven; sensitive-data deny-list tests remain GREEN; idempotency, retry, recovery, crash, and concurrency audit invariants are proven; a production-composition E2E test proves command → durable mutation → audit record → outbox/publication path; existing 64/64 benchmark and full suite remain GREEN; and Typecheck, API Build, Deployment Boundary, and Compose Smoke remain GREEN.
+
+All acceptance criteria were satisfied by the implementation and final CI evidence recorded above.
