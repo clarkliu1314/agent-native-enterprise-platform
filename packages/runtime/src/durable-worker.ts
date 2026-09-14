@@ -1,7 +1,7 @@
 import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { classifyError, createStructuredLogEvent, safeEmit, safeMetric, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
 import type { QueueConsumer } from './ports';
-import type { OperationalControlService } from './operational-control';
+import { OperationalControlError, type OperationalControlService } from './operational-control';
 
 export interface DurableWorkerOptions {
   owner: string;
@@ -82,7 +82,13 @@ export class DurableWorker {
       : undefined;
     if (!tenantId) return true;
 
-    const state = await control.getControl(tenantId, runId);
+    let state;
+    try {
+      state = await control.getControl(tenantId, runId);
+    } catch (error) {
+      if (error instanceof OperationalControlError && error.code === 'RUN_NOT_FOUND') return true;
+      throw error;
+    }
     if (state.paused) return false;
 
     await control.authorizeContinuation({
