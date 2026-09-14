@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { MemoryObservabilityMetrics } from '@agent-native/observability';
 import { RecoveryCoordinator, type RecoveryCandidate } from './recovery';
 import type { ToolExecutionRequest, ToolExecutionResult, ToolExecutionService } from '@agent-native/tool-runtime';
 import type { ObservabilityLogger } from '@agent-native/observability';
@@ -26,5 +27,26 @@ describe('RecoveryCoordinator observability', () => {
       expect.objectContaining({ event: 'recovery.completed' }),
     ]));
     expect(JSON.stringify(events)).not.toContain('company-1');
+  });
+
+  it('records retry recovery metrics without high-cardinality labels', async () => {
+    const metrics = new MemoryObservabilityMetrics();
+    const request: ToolExecutionRequest = {
+      tool: { name: 'lookup-company', description: 'lookup', sideEffect: false },
+      input: {},
+      context: { actorId: 'actor-1', tenantId: 'tenant-1', permissions: ['tool:read'] },
+      idempotencyKey: 'idem-recovery-metrics',
+    };
+    const service = { execute: vi.fn().mockResolvedValue({ output: { ok: true }, replayed: true } satisfies ToolExecutionResult) } as unknown as ToolExecutionService;
+
+    await new RecoveryCoordinator(service, {
+      metrics,
+      correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', runId: 'run-1' },
+    }).recover({ request, state: 'FAILED_RETRYABLE' });
+
+    expect(metrics.entries()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'agent_recovery_attempt_total', labels: expect.objectContaining({ outcome: 'RETRYING' }) }),
+      expect.objectContaining({ name: 'agent_recovery_retry_total', labels: expect.objectContaining({ outcome: 'RETRYING' }) }),
+    ]));
   });
 });
