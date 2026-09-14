@@ -1,5 +1,7 @@
 export type AuditActorType = 'USER' | 'SERVICE' | 'SYSTEM';
 export type AuditOutcome = 'SUCCEEDED' | 'REJECTED' | 'FAILED' | 'REPLAYED';
+export type AuditReasonClass = 'NONE' | 'PROVIDED' | 'SYSTEM';
+export type AuditScalar = string | number | boolean | null;
 
 export interface AuditCorrelation {
   requestId: string;
@@ -19,10 +21,10 @@ export interface AuditRecord {
   resourceType: string;
   resourceId: string;
   outcome: AuditOutcome;
-  reasonClass: 'NONE' | 'PROVIDED' | 'SYSTEM';
+  reasonClass: AuditReasonClass;
   correlation: AuditCorrelation;
   version?: number;
-  metadata: Record<string, string | number | boolean | null>;
+  metadata: Record<string, AuditScalar>;
 }
 
 export interface AuditQuery {
@@ -49,13 +51,21 @@ export interface AuditRepository {
 }
 
 const FORBIDDEN_KEYS = /^(prompt|completion|password|token|secret|apiKey|authorization|cookie|input|output|body|privateKey|credential|credentials)$/i;
+const MAX_LIMIT = 100;
 
 export function validateAuditRecord(record: AuditRecord): void {
   if (!record.auditId || !record.tenantId || !record.actorId || !record.action || !record.resourceType || !record.resourceId) {
     throw new Error('INVALID_AUDIT_RECORD');
   }
-  for (const key of Object.keys(record.metadata)) {
+  if (!['USER', 'SERVICE', 'SYSTEM'].includes(record.actorType)) throw new Error('INVALID_AUDIT_ACTOR');
+  if (!['SUCCEEDED', 'REJECTED', 'FAILED', 'REPLAYED'].includes(record.outcome)) throw new Error('INVALID_AUDIT_OUTCOME');
+  if (!['NONE', 'PROVIDED', 'SYSTEM'].includes(record.reasonClass)) throw new Error('INVALID_AUDIT_REASON_CLASS');
+  if (!record.correlation.requestId || !record.correlation.traceId) throw new Error('INVALID_AUDIT_CORRELATION');
+  if (!Number.isInteger(record.version ?? 0) || (record.version ?? 0) < 0) throw new Error('INVALID_AUDIT_VERSION');
+  if (!Number.isFinite(Date.parse(record.occurredAt))) throw new Error('INVALID_AUDIT_TIMESTAMP');
+  for (const [key, value] of Object.entries(record.metadata)) {
     if (FORBIDDEN_KEYS.test(key)) throw new Error('SENSITIVE_AUDIT_DATA');
+    if (!['string', 'number', 'boolean'].includes(typeof value) && value !== null) throw new Error('INVALID_AUDIT_METADATA');
   }
 }
 
@@ -69,6 +79,7 @@ export class InMemoryAuditRepository implements AuditRepository {
   }
 
   async query(query: AuditQuery): Promise<AuditQueryResult> {
+    const limit = Math.min(Math.max(query.limit, 1), MAX_LIMIT);
     const filtered = this.records
       .filter((r) => r.tenantId === query.tenantId && r.occurredAt >= query.from && r.occurredAt < query.to)
       .filter((r) => !query.resourceType || r.resourceType === query.resourceType)
@@ -77,6 +88,6 @@ export class InMemoryAuditRepository implements AuditRepository {
       .filter((r) => !query.action || r.action === query.action)
       .filter((r) => !query.outcome || r.outcome === query.outcome)
       .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.auditId.localeCompare(b.auditId));
-    return { items: filtered.slice(0, Math.min(Math.max(query.limit, 1), 100)) };
+    return { items: filtered.slice(0, limit) };
   }
 }
