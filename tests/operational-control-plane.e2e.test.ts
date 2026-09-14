@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryOperationalControlRepository, OperationalControlService, type OperationalControlAction, type OperationalControlCommand, type OperationalControlState } from '../packages/runtime/src/operational-control';
+import { createOperationalControlHandler } from '../apps/api/src/operational-control-handler';
+import { createVercelHandler } from '../apps/api/src/handler';
 
 describe('Stage 12.2 operational control plane', () => {
   const baseCommand = (action: OperationalControlAction): OperationalControlCommand => ({
@@ -84,5 +86,25 @@ describe('Stage 12.2 operational control plane', () => {
   it('stale workers are prevented from effectful continuation after terminal control', async () => {
     const service = new OperationalControlService(); await service.execute(baseCommand('CANCEL'));
     await expect(service.authorizeContinuation({ tenantId: 'tenant-a', runId: 'run-1', fencingToken: 7n })).rejects.toMatchObject({ code: 'STALE_FENCING_TOKEN' });
+  });
+
+  it('routes an operator control command through the production Vercel handler composition', async () => {
+    const application = { startRun: async () => ({ runId: 'unused' }) };
+    const handler = createVercelHandler(application as never, createOperationalControlHandler({
+      service: {
+        execute: async (command: Record<string, unknown>) => ({
+          outcome: 'SUCCEEDED', replayed: false,
+          control: { tenantId: command.tenantId, runId: command.runId, version: 8, paused: command.action === 'PAUSE', cancelled: false, runState: 'RUNNING', fencingToken: 8n },
+          eventsCreated: 1, delegatedToRecovery: false, runStateMutation: false, executedInHttp: false,
+        }),
+      } as never,
+    }));
+    const response = await handler(new Request('https://example.test/api/runs/run-1/pause', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-tenant-id': 'tenant-a', 'x-actor-id': 'operator-1', 'x-request-id': 'req-e2e-1', 'x-trace-id': 'trace-e2e-1', 'idempotency-key': 'control-e2e-1' },
+      body: JSON.stringify({ commandId: 'cmd-e2e-1' }),
+    }));
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({ action: 'PAUSE', runId: 'run-1', outcome: 'SUCCEEDED', executedInHttp: false });
   });
 });
