@@ -1,6 +1,6 @@
 import type { AuditQuery, AuditQueryResult, AuditRecord, AuditRepository, TransactionalAuditRepository } from './auditability';
 import { validateAuditRecord } from './auditability';
-import type { SqlClient, TransactionClient, TransactionRunner } from './ports';
+import type { SqlClient, TransactionRunner } from './ports';
 
 const MAX_LIMIT = 100;
 const MAX_WINDOW_MS = 31 * 24 * 60 * 60 * 1000;
@@ -16,7 +16,7 @@ export class PostgresAuditRepository implements TransactionalAuditRepository {
     });
   }
 
-  async appendInTransaction(tx: TransactionClient, record: AuditRecord): Promise<void> {
+  async appendInTransaction(tx: SqlClient, record: AuditRecord): Promise<void> {
     insertAuditRecordValidation(record);
     await insertAuditRecord(tx, record);
   }
@@ -61,7 +61,7 @@ export class PostgresAuditRepository implements TransactionalAuditRepository {
   }
 }
 
-export async function insertAuditRecord(tx: TransactionClient, record: AuditRecord): Promise<void> {
+export async function insertAuditRecord(tx: SqlClient, record: AuditRecord): Promise<void> {
   validateAuditRecord(record);
   const result = await tx.query(
     `INSERT INTO audit_records
