@@ -11,12 +11,12 @@ export interface AuditQuery { tenantId: string; from: string; to: string; resour
 export interface AuditQueryResult { items: AuditRecord[]; nextCursor?: string; }
 export interface AuditRepository { append(record: AuditRecord): Promise<void>; query(query: AuditQuery): Promise<AuditQueryResult>; }
 
-export function buildRunAuditRecord(input: { run: RunView; from: RunView['state']; action: string; actorId: string; occurredAt: string; correlation: Pick<AuditCorrelation, 'requestId' | 'traceId'> }): AuditRecord {
+export function buildRunAuditRecord(input: { run: RunView; tenantId: string; version: number; from: RunView['state']; action: string; actorId: string; occurredAt: string; correlation: Pick<AuditCorrelation, 'requestId' | 'traceId'> }): AuditRecord {
   const workflowId = typeof input.run.metadata?.workflowId === 'string' ? input.run.metadata.workflowId : undefined;
-  const agentId = typeof input.run.metadata?.agentId === 'string' ? input.run.metadata.agentId : undefined;
+  const agentId = input.run.agentId;
   return {
-    auditId: `audit:${input.run.runId}:${input.action}:${input.run.version}`,
-    tenantId: input.run.tenantId,
+    auditId: `audit:${input.run.runId}:${input.action}:${input.version}`,
+    tenantId: input.tenantId,
     occurredAt: input.occurredAt,
     actorId: input.actorId,
     actorType: 'SYSTEM',
@@ -26,7 +26,7 @@ export function buildRunAuditRecord(input: { run: RunView; from: RunView['state'
     outcome: input.run.state === 'FAILED' ? 'FAILED' : 'SUCCEEDED',
     reasonClass: 'NONE',
     correlation: { ...input.correlation, runId: input.run.runId, ...(workflowId ? { workflowId } : {}), ...(agentId ? { agentId } : {}) },
-    version: input.run.version,
+    version: input.version,
     metadata: { fromState: input.from, resultingState: input.run.state },
   };
 }
