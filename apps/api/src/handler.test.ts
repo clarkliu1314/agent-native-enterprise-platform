@@ -58,6 +58,8 @@ describe('Vercel request boundary', () => {
           fencingToken: 0n,
           leaseOwner: null,
           leaseExpiresAt: null,
+          attempt: 0,
+          createdAt: '2026-01-01T00:00:00.000Z',
         },
         replayed: false,
       }),
