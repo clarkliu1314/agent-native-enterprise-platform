@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { MemoryObservabilityMetrics } from '@agent-native/observability';
 import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import type { QueueConsumer } from './ports';
 import { DurableWorker } from './durable-worker';
@@ -40,6 +41,22 @@ describe('DurableWorker observability', () => {
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({ event: 'run.started', context: expect.objectContaining({ requestId: 'delivery-2', traceId: 'trace-durable' }) }),
       expect.objectContaining({ event: 'run.succeeded', context: expect.objectContaining({ requestId: 'delivery-2', traceId: 'trace-durable' }) }),
+    ]));
+  });
+
+  it('records canonical run completion metrics', async () => {
+    const runtime = baseRuntime();
+    const metrics = new MemoryObservabilityMetrics();
+    const consumer: QueueConsumer = { consume: vi.fn(async () => undefined) };
+    const worker = new DurableWorker(runtime, consumer, {
+      owner: 'worker-1', now: () => new Date(0), executionSliceMs: 100, metrics,
+      correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1', agentId: 'investment-worker' },
+    });
+
+    await worker.process('run-1');
+
+    expect(metrics.entries()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'agent_run_completed_total', labels: expect.objectContaining({ outcome: 'SUCCEEDED' }) }),
     ]));
   });
 });
