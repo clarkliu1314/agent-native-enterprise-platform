@@ -2,9 +2,11 @@ import {
   classifyError,
   createStructuredLogEvent,
   safeEmit,
+  safeMetric,
   type CorrelationContext,
   type ObservabilityLogLevel,
   type ObservabilityLogger,
+  type ObservabilityMetrics,
   type ObservabilityOutcome,
   type StableErrorCode,
 } from '@agent-native/observability';
@@ -13,6 +15,7 @@ import type { OutboxRecord, OutboxRepository } from './repositories';
 
 export interface OutboxPublisherOptions {
   logger?: ObservabilityLogger;
+  metrics?: ObservabilityMetrics;
 }
 
 export class OutboxPublisher {
@@ -33,6 +36,7 @@ export class OutboxPublisher {
         await this.queue.publish(record.topic, record.payload);
         await this.outbox.markPublished(record.outboxId);
         published += 1;
+        safeMetric(() => this.options.metrics?.increment('agent_outbox_publish_total', 1, { outcome: 'PUBLISHED' }));
         this.emit(context, {
           event: 'outbox.published',
           level: 'INFO',
@@ -43,11 +47,13 @@ export class OutboxPublisher {
         const delay = Math.min(this.maxBackoffMs, 2 ** Math.min(record.attempts, 10) * 100);
         await this.outbox.scheduleRetry(record.outboxId, new Date(Date.now() + delay));
         retried += 1;
+        const errorCode = classifyError(error);
+        safeMetric(() => this.options.metrics?.increment('agent_outbox_publish_failed_total', 1, { error_code: errorCode }));
         this.emit(context, {
           event: 'outbox.retried',
           level: 'WARN',
           outcome: 'RETRYING',
-          errorCode: classifyError(error),
+          errorCode,
           attributes: { outboxId: record.outboxId, eventId: record.eventId, topic: record.topic, attempts: record.attempts },
         });
       }
