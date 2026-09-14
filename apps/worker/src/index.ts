@@ -1,7 +1,9 @@
 import {
   DurableRuntimeService,
   DurableWorker,
+  OperationalControlService,
   PostgresDatabase,
+  PostgresOperationalControlRepository,
   PostgresToolRepositories,
 } from '@agent-native/runtime';
 import type { QueueConsumer, RuntimeAdapter } from '@agent-native/runtime';
@@ -12,6 +14,7 @@ export interface WorkerComposition<C extends QueueConsumer = QueueConsumer> {
   repositories: PostgresToolRepositories;
   runtime: DurableRuntimeService;
   worker: DurableWorker;
+  control: OperationalControlService;
   consumer: C;
 }
 
@@ -20,12 +23,13 @@ export interface WorkerCompositionOptions {
   leaseMs?: number;
   heartbeatMs?: number;
   executionSliceMs?: number;
+  operationalControl?: OperationalControlService;
 }
 
-export function composeWorker(
+function createWorkerComposition(
   adapter: RuntimeAdapter,
   consumer: QueueConsumer,
-  options: WorkerCompositionOptions = {},
+  options: WorkerCompositionOptions,
 ): WorkerComposition {
   const database = new PostgresDatabase();
   const repositories = new PostgresToolRepositories(database);
@@ -34,11 +38,23 @@ export function composeWorker(
     leaseMs: options.leaseMs,
     heartbeatMs: options.heartbeatMs,
   });
+  const control = options.operationalControl ?? new OperationalControlService({
+    repository: new PostgresOperationalControlRepository(database),
+  });
   const worker = new DurableWorker(runtime, consumer, {
     owner: options.owner ?? `worker-${process.pid}`,
     executionSliceMs: options.executionSliceMs,
+    operationalControl: control,
   });
-  return { database, repositories, runtime, worker, consumer };
+  return { database, repositories, runtime, worker, control, consumer };
+}
+
+export function composeWorker(
+  adapter: RuntimeAdapter,
+  consumer: QueueConsumer,
+  options: WorkerCompositionOptions = {},
+): WorkerComposition {
+  return createWorkerComposition(adapter, consumer, options);
 }
 
 export function composeRedisWorker(
@@ -47,18 +63,7 @@ export function composeRedisWorker(
   options: WorkerCompositionOptions = {},
 ): WorkerComposition<RedisStreamConsumer> {
   const consumer = createRedisConsumer(redisUrl);
-  const database = new PostgresDatabase();
-  const repositories = new PostgresToolRepositories(database);
-  const runtime = new DurableRuntimeService(repositories, {
-    adapter,
-    leaseMs: options.leaseMs,
-    heartbeatMs: options.heartbeatMs,
-  });
-  const worker = new DurableWorker(runtime, consumer, {
-    owner: options.owner ?? `worker-${process.pid}`,
-    executionSliceMs: options.executionSliceMs,
-  });
-  return { database, repositories, runtime, worker, consumer };
+  return createWorkerComposition(adapter, consumer, options) as WorkerComposition<RedisStreamConsumer>;
 }
 
 export { RecoveryWorker } from './recovery-worker';

@@ -1,6 +1,7 @@
 import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { classifyError, createStructuredLogEvent, safeEmit, safeMetric, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
 import type { QueueConsumer } from './ports';
+import { OperationalControlError, type OperationalControlService } from './operational-control';
 
 export interface DurableWorkerOptions {
   owner: string;
@@ -9,6 +10,7 @@ export interface DurableWorkerOptions {
   heartbeat?: {
     start(input: { runId: string; owner: string; fencingToken: bigint }): { stop(): void };
   };
+  operationalControl?: OperationalControlService;
   logger?: ObservabilityLogger;
   metrics?: ObservabilityMetrics;
   correlation?: CorrelationContext;
@@ -49,6 +51,8 @@ export class DurableWorker {
     safeMetric(() => this.options.metrics?.increment('agent_run_started_total', 1, { state: 'RUNNING' }));
     const deadlineAt = new Date(startedAt.getTime() + this.executionSliceMs);
     try {
+      const canContinue = await this.authorizeOperationalContinuation(runId);
+      if (!canContinue) return;
       await this.runtime.executeRunBounded(runId, this.options.owner, deadlineAt);
       if (this.options.logger && context) safeEmit(this.options.logger, createStructuredLogEvent({
         context, event: 'run.succeeded', level: 'INFO', outcome: 'SUCCEEDED',
@@ -64,6 +68,35 @@ export class DurableWorker {
       safeMetric(() => this.options.metrics?.increment('agent_run_failed_total', 1, { error_code: classifyError(error) }));
       throw error;
     }
+  }
+
+  private async authorizeOperationalContinuation(runId: string): Promise<boolean> {
+    const control = this.options.operationalControl;
+    if (!control) return true;
+
+    const durableRun = await this.runtime.getRun(runId);
+    if (!durableRun) return true;
+
+    const tenantId = typeof durableRun.metadata?.tenantId === 'string'
+      ? durableRun.metadata.tenantId
+      : undefined;
+    if (!tenantId) return true;
+
+    let state;
+    try {
+      state = await control.getControl(tenantId, runId);
+    } catch (error) {
+      if (error instanceof OperationalControlError && error.code === 'RUN_NOT_FOUND') return true;
+      throw error;
+    }
+    if (state.paused) return false;
+
+    await control.authorizeContinuation({
+      tenantId,
+      runId,
+      fencingToken: durableRun.fencingToken,
+    });
+    return true;
   }
 
   private async loadDurableCorrelation(runId: string): Promise<CorrelationContext | undefined> {

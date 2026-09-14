@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { RunState, type AgentRuntime } from '@agent-native/runtime-contract';
+import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { DeploymentApplication } from '@agent-native/deployment-boundary';
-import { createHandler } from './handler';
+import { createHandler, createVercelHandler } from './handler';
 
 function runtimeDouble(): AgentRuntime {
   return {
@@ -42,5 +43,43 @@ describe('Vercel request boundary', () => {
     const handler = createHandler(new DeploymentApplication(runtimeDouble()));
     const response = await handler(new Request('https://example.test/runs', { method: 'GET' }));
     expect(response.status).toBe(405);
+  });
+
+  it('accepts the durable RuntimeFacade used by production composition', async () => {
+    const runtime: RuntimeFacade = {
+      createRun: async () => ({
+        run: {
+          runId: 'run-durable-1',
+          agentId: 'agent-1',
+          state: 'QUEUED',
+          input: 'hello',
+          version: 0,
+          metadata: {},
+          fencingToken: 0n,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          attempt: 0,
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+        replayed: false,
+      }),
+      resumeRun: async () => { throw new Error('not used'); },
+      executeRunBounded: async () => { throw new Error('not used'); },
+      cancelRun: async () => { throw new Error('not used'); },
+      approveRun: async () => { throw new Error('not used'); },
+      getRun: async () => { throw new Error('not used'); },
+      listRunEvents: async () => [],
+      getRunCheckpoint: async () => null,
+      getToolCall: async () => null,
+    };
+    const handler = createVercelHandler(runtime);
+    const response = await handler(new Request('https://example.test/runs', {
+      method: 'POST',
+      body: JSON.stringify({ agentId: 'agent-1', input: 'hello' }),
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({ runId: 'run-durable-1', state: 'QUEUED' });
   });
 });

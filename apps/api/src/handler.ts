@@ -1,6 +1,9 @@
 import { DeploymentApplication } from '@agent-native/deployment-boundary';
 import type { AgentRuntime, StartRunInput } from '@agent-native/runtime-contract';
+import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
+import { createDurableHandler } from './durable-handler';
 export { createDurableHandler } from './durable-handler';
+export { createOperationalControlHandler } from './operational-control-handler';
 export { composeApi } from './composition';
 
 export function createHandler(application: DeploymentApplication) {
@@ -16,5 +19,23 @@ export function createHandler(application: DeploymentApplication) {
   };
 }
 
-export function createVercelHandler(application: DeploymentApplication) { return createHandler(application); }
+export function createVercelHandler(
+  application: DeploymentApplication | RuntimeFacade,
+  controlHandler?: (request: Request) => Promise<Response>,
+) {
+  const durableHandler = isRuntimeFacade(application)
+    ? createDurableHandler(application)
+    : createHandler(application);
+  return async function handler(request: Request): Promise<Response> {
+    if (controlHandler && new URL(request.url).pathname.startsWith('/api/runs/')) {
+      return controlHandler(request);
+    }
+    return durableHandler(request);
+  };
+}
+
 export type RequestRuntimeFactory = () => AgentRuntime;
+
+function isRuntimeFacade(application: DeploymentApplication | RuntimeFacade): application is RuntimeFacade {
+  return typeof (application as RuntimeFacade).createRun === 'function';
+}
