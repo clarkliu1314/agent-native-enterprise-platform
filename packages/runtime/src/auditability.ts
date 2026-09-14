@@ -26,6 +26,7 @@ export function buildRunLifecycleAuditRecord(input: { run: RunView; tenantId: st
 
 const FORBIDDEN_KEY_PARTS = ['prompt', 'completion', 'password', 'token', 'secret', 'apikey', 'authorization', 'cookie', 'input', 'output', 'body', 'privatekey', 'credential'];
 const MAX_LIMIT = 100;
+const MAX_WINDOW_MS = 31 * 24 * 60 * 60 * 1000;
 function isForbiddenKey(key: string): boolean {
   const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
   return FORBIDDEN_KEY_PARTS.some((part) => normalized.includes(part));
@@ -45,5 +46,33 @@ export class InMemoryAuditRepository implements AuditRepository, TransactionalAu
   private readonly records: AuditRecord[] = [];
   async append(record: AuditRecord): Promise<void> { validateAuditRecord(record); if (this.records.some((existing) => existing.auditId === record.auditId)) throw new Error('AUDIT_DUPLICATE'); this.records.push(structuredClone(record)); }
   async appendInTransaction(_tx: SqlClient, record: AuditRecord): Promise<void> { await this.append(record); }
-  async query(query: AuditQuery): Promise<AuditQueryResult> { const limit = Math.min(Math.max(query.limit, 1), MAX_LIMIT); const filtered = this.records.filter((r) => r.tenantId === query.tenantId && r.occurredAt >= query.from && r.occurredAt < query.to).filter((r) => !query.resourceType || r.resourceType === query.resourceType).filter((r) => !query.resourceId || r.resourceId === query.resourceId).filter((r) => !query.actorId || r.actorId === query.actorId).filter((r) => !query.action || r.action === query.action).filter((r) => !query.outcome || r.outcome === query.outcome).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.auditId.localeCompare(b.auditId)); return { items: filtered.slice(0, limit) }; }
+  async query(query: AuditQuery): Promise<AuditQueryResult> {
+    if (!query.tenantId) throw new Error('INVALID_AUDIT_QUERY_TENANT');
+    if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > MAX_LIMIT) throw new Error('INVALID_AUDIT_QUERY_LIMIT');
+    const fromMs = Date.parse(query.from); const toMs = Date.parse(query.to);
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs || toMs - fromMs > MAX_WINDOW_MS) throw new Error('INVALID_AUDIT_QUERY_WINDOW');
+    const cursor = query.cursor ? decodeCursor(query.cursor) : undefined;
+    const filtered = this.records
+      .filter((r) => r.tenantId === query.tenantId && r.occurredAt >= query.from && r.occurredAt < query.to)
+      .filter((r) => !query.resourceType || r.resourceType === query.resourceType)
+      .filter((r) => !query.resourceId || r.resourceId === query.resourceId)
+      .filter((r) => !query.actorId || r.actorId === query.actorId)
+      .filter((r) => !query.action || r.action === query.action)
+      .filter((r) => !query.outcome || r.outcome === query.outcome)
+      .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.auditId.localeCompare(b.auditId))
+      .filter((r) => !cursor || r.occurredAt > cursor.occurredAt || (r.occurredAt === cursor.occurredAt && r.auditId > cursor.auditId));
+    const page = filtered.slice(0, query.limit + 1);
+    const hasMore = page.length > query.limit;
+    const items = hasMore ? page.slice(0, query.limit) : page;
+    return { items, nextCursor: hasMore ? encodeCursor(items[items.length - 1]) : undefined };
+  }
+}
+
+function encodeCursor(record: AuditRecord): string { return Buffer.from(JSON.stringify({ occurredAt: record.occurredAt, auditId: record.auditId })).toString('base64url'); }
+function decodeCursor(cursor: string): { occurredAt: string; auditId: string } {
+  try {
+    const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as Record<string, unknown>;
+    if (typeof value.occurredAt !== 'string' || typeof value.auditId !== 'string' || !value.auditId || !Number.isFinite(Date.parse(value.occurredAt))) throw new Error('INVALID_AUDIT_CURSOR');
+    return { occurredAt: value.occurredAt, auditId: value.auditId };
+  } catch { throw new Error('INVALID_AUDIT_CURSOR'); }
 }
