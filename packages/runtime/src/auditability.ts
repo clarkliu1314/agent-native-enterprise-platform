@@ -1,5 +1,5 @@
 import type { RunView } from '@agent-native/runtime-contract/durable';
-import type { TransactionClient } from './ports';
+import type { SqlClient } from './ports';
 
 export type AuditActorType = 'USER' | 'SERVICE' | 'SYSTEM';
 export type AuditOutcome = 'SUCCEEDED' | 'REJECTED' | 'FAILED' | 'REPLAYED';
@@ -11,7 +11,7 @@ export interface AuditRecord { auditId: string; tenantId: string; occurredAt: st
 export interface AuditQuery { tenantId: string; from: string; to: string; resourceType?: string; resourceId?: string; actorId?: string; action?: string; outcome?: AuditOutcome; limit: number; cursor?: string; }
 export interface AuditQueryResult { items: AuditRecord[]; nextCursor?: string; }
 export interface AuditRepository { append(record: AuditRecord): Promise<void>; query(query: AuditQuery): Promise<AuditQueryResult>; }
-export interface TransactionalAuditRepository extends AuditRepository { appendInTransaction(tx: TransactionClient, record: AuditRecord): Promise<void>; }
+export interface TransactionalAuditRepository extends AuditRepository { appendInTransaction(tx: SqlClient, record: AuditRecord): Promise<void>; }
 
 export function buildRunAuditRecord(input: { run: RunView; tenantId: string; version: number; from: RunView['state']; action: string; actorId: string; occurredAt: string; correlation: Pick<AuditCorrelation, 'requestId' | 'traceId'> }): AuditRecord {
   const workflowId = typeof input.run.metadata?.workflowId === 'string' ? input.run.metadata.workflowId : undefined;
@@ -67,6 +67,6 @@ export function validateAuditRecord(record: AuditRecord): void {
 export class InMemoryAuditRepository implements AuditRepository, TransactionalAuditRepository {
   private readonly records: AuditRecord[] = [];
   async append(record: AuditRecord): Promise<void> { validateAuditRecord(record); if (this.records.some((existing) => existing.auditId === record.auditId)) throw new Error('AUDIT_DUPLICATE'); this.records.push(structuredClone(record)); }
-  async appendInTransaction(_tx: TransactionClient, record: AuditRecord): Promise<void> { await this.append(record); }
+  async appendInTransaction(_tx: SqlClient, record: AuditRecord): Promise<void> { await this.append(record); }
   async query(query: AuditQuery): Promise<AuditQueryResult> { const limit = Math.min(Math.max(query.limit, 1), MAX_LIMIT); const filtered = this.records.filter((r) => r.tenantId === query.tenantId && r.occurredAt >= query.from && r.occurredAt < query.to).filter((r) => !query.resourceType || r.resourceType === query.resourceType).filter((r) => !query.resourceId || r.resourceId === query.resourceId).filter((r) => !query.actorId || r.actorId === query.actorId).filter((r) => !query.action || r.action === query.action).filter((r) => !query.outcome || r.outcome === query.outcome).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.auditId.localeCompare(b.auditId)); return { items: filtered.slice(0, limit) }; }
 }
