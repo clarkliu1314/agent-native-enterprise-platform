@@ -1,8 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { CreateRunCommand, RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { IdempotencyConflictError, RunNotFoundError } from '@agent-native/runtime';
+import { createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
 
-export interface DurableHandlerOptions { syncBudgetMs?: number; owner?: string; }
+export interface DurableHandlerOptions {
+  syncBudgetMs?: number;
+  owner?: string;
+  logger?: ObservabilityLogger;
+  metrics?: ObservabilityMetrics;
+}
 
 export function createDurableHandler(runtime: RuntimeFacade, options: DurableHandlerOptions = {}) {
   const syncBudgetMs = options.syncBudgetMs ?? 8_000;
@@ -14,7 +20,14 @@ export function createDurableHandler(runtime: RuntimeFacade, options: DurableHan
         const body = await request.json() as { agentId?: unknown; input?: unknown; metadata?: unknown; executionMode?: unknown };
         if (typeof body.agentId !== 'string' || !body.agentId || !('input' in body)) return Response.json({ error: 'invalid_request' }, { status: 400 });
         const executionMode = body.executionMode === 'sync' ? 'sync' : 'async';
-        const command: CreateRunCommand = { agentId: body.agentId, input: body.input, metadata: isRecord(body.metadata) ? body.metadata : undefined, executionMode, idempotencyKey: request.headers.get('idempotency-key') ?? undefined };
+        const requestId = request.headers.get('x-request-id') || `req_${randomUUID()}`;
+        const traceId = request.headers.get('x-trace-id') || `trace_${randomUUID()}`;
+        const suppliedMetadata = isRecord(body.metadata) ? body.metadata : {};
+        const tenantId = request.headers.get('x-tenant-id') || (typeof suppliedMetadata.tenantId === 'string' ? suppliedMetadata.tenantId : 'unknown');
+        const context: CorrelationContext = { requestId, traceId, tenantId };
+        const metadata = { ...suppliedMetadata, requestId, traceId, tenantId };
+        const command: CreateRunCommand = { agentId: body.agentId, input: body.input, metadata, executionMode, idempotencyKey: request.headers.get('idempotency-key') ?? undefined };
+        safeEmit(options.logger!, createStructuredLogEvent({ context: { ...context, agentId: body.agentId }, event: 'api.accepted', level: 'INFO', outcome: 'STARTED' }));
         const created = await runtime.createRun(command);
         if (executionMode === 'sync' && !created.replayed) {
           const result = await runtime.executeRunBounded(created.run.runId, owner, new Date(Date.now() + syncBudgetMs));
