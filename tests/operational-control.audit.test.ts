@@ -28,7 +28,7 @@ describe('operational control auditability RED gate', () => {
     })).rejects.toMatchObject({ code: 'AUTHORIZATION_DENIED' } satisfies Partial<InstanceType<typeof OperationalControlError>>);
     const rows = (await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 20 })).items;
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ outcome: 'REJECTED', action: 'CANCEL', actorId: 'unauthorized', resourceType: 'RUN', resourceId: 'run-1', reasonClass: 'SYSTEM' });
+    expect(rows[0]).toMatchObject({ outcome: 'REJECTED', action: 'CANCEL', actorId: 'unauthorized', resourceType: 'RUN', resourceId: 'REDACTED', reasonClass: 'SYSTEM' });
     expect(rows[0].metadata).not.toHaveProperty('resultingState');
   });
 
