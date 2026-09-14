@@ -1,6 +1,6 @@
 # Stage 12.2 — Operational Control Plane Specification
 
-**Status:** Approved design baseline; implementation pending TDD RED gate.
+**Status:** IMPLEMENTATION COMPLETE; final verification recorded against production-composition CI Run #670.
 
 ## Goal
 
