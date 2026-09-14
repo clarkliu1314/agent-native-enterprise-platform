@@ -36,7 +36,8 @@ describe('auditability production composition RED gate', () => {
 
   it('serves the audit query through the production Vercel handler boundary', async () => {
     const { createVercelHandler } = await import('../apps/api/src/handler');
-    const { AuditQueryService, InMemoryAuditRepository } = await import('../packages/runtime/src/auditability');
+    const { AuditQueryService } = await import('../packages/runtime/src/audit-query-service');
+    const { InMemoryAuditRepository } = await import('../packages/runtime/src/auditability');
 
     const audit = new InMemoryAuditRepository();
     await audit.append({
@@ -76,7 +77,7 @@ describe('auditability production composition RED gate', () => {
 
   it('rejects an unauthorized actor without querying audit data', async () => {
     const { createAuditQueryHandler } = await import('../apps/api/src/audit-query-handler');
-    const { AuditQueryService } = await import('../packages/runtime/src/auditability');
+    const { AuditQueryService } = await import('../packages/runtime/src/audit-query-service');
 
     let queried = false;
     const service = new AuditQueryService({
