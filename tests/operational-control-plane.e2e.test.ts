@@ -34,7 +34,7 @@ describe('Stage 12.2 operational control plane', () => {
     const service = new OperationalControlService();
     const cancel = await service.execute({ ...baseCommand('CANCEL'), idempotencyKey: 'idem-cancel', commandId: 'cmd-cancel' });
     expect(cancel.control.cancelled).toBe(true);
-    await expect(service.execute({ ...baseCommand('RESUME'), idempotencyKey: 'idem-resume-after-cancel', commandId: 'cmd-resume-after-cancel' })).rejects.toMatchObject({ code: 'INVALID_STATE_TRANSITION' });
+    await expect(service.execute({ ...baseCommand('RESUME'), expectedVersion: undefined, idempotencyKey: 'idem-resume-after-cancel', commandId: 'cmd-resume-after-cancel' })).rejects.toMatchObject({ code: 'INVALID_STATE_TRANSITION' });
   });
   it('retry delegates to existing recovery semantics rather than manufacturing RUNNING', async () => {
     const recovery = { retry: async (runId: string) => ({ runId }) , recover: async (runId: string) => ({ runId }) };
