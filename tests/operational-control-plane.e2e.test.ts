@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { OperationalControlService, type OperationalControlAction, type OperationalControlCommand } from '../packages/runtime/src/operational-control';
+import { OperationalControlService, type OperationalControlAction, type OperationalControlCommand, type OperationalControlState } from '../packages/runtime/src/operational-control';
 
 describe('Stage 12.2 operational control plane', () => {
   const baseCommand = (action: OperationalControlAction): OperationalControlCommand => ({
     commandId: `cmd-${action.toLowerCase()}`, tenantId: 'tenant-a', runId: 'run-1', actorId: 'operator-1', action,
     idempotencyKey: `idem-${action.toLowerCase()}`, expectedVersion: 7,
     correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-a', runId: 'run-1', workflowId: 'workflow-1', agentId: 'agent-1', actorId: 'operator-1' },
+  });
+
+  const state = (overrides: Partial<OperationalControlState> = {}): OperationalControlState => ({
+    tenantId: 'tenant-a', runId: 'run-1', version: 7, paused: false, cancelled: false, runState: 'RUNNING', fencingToken: 7n, ...overrides,
   });
 
   it('authorized pause creates durable pause intent and one outbox event', async () => {
@@ -38,8 +42,28 @@ describe('Stage 12.2 operational control plane', () => {
   });
   it('retry delegates to existing recovery semantics rather than manufacturing RUNNING', async () => {
     const recovery = { retry: async (runId: string) => ({ runId }) , recover: async (runId: string) => ({ runId }) };
-    const result = await new OperationalControlService({ recovery }).execute({ ...baseCommand('RETRY'), idempotencyKey: 'idem-retry', commandId: 'cmd-retry' });
+    const result = await new OperationalControlService({ repository: undefined, recovery }).execute({ ...baseCommand('RETRY'), idempotencyKey: 'idem-retry', commandId: 'cmd-retry' });
     expect(result.delegatedToRecovery).toBe(true); expect(result.runStateMutation).toBe(false); expect(result.eventsCreated).toBe(1);
+  });
+  it('rejects retry while a run is not FAILED so the control plane cannot manufacture a retryable candidate', async () => {
+    const recovery = { retry: async (runId: string) => ({ runId }), recover: async (runId: string) => ({ runId }) };
+    const service = new OperationalControlService({
+      repository: new (class extends (await import('../packages/runtime/src/operational-control')).InMemoryOperationalControlRepository {
+        constructor() { super(state({ runState: 'RUNNING' })); }
+      })(),
+      recovery,
+    });
+    await expect(service.execute({ ...baseCommand('RETRY'), idempotencyKey: 'idem-retry-running', commandId: 'cmd-retry-running' })).rejects.toMatchObject({ code: 'RECOVERY_REJECTED' });
+  });
+  it('rejects recover for terminal success instead of bypassing existing recovery candidate eligibility', async () => {
+    const recovery = { retry: async (runId: string) => ({ runId }), recover: async (runId: string) => ({ runId }) };
+    const service = new OperationalControlService({
+      repository: new (class extends (await import('../packages/runtime/src/operational-control')).InMemoryOperationalControlRepository {
+        constructor() { super(state({ runState: 'SUCCEEDED' })); }
+      })(),
+      recovery,
+    });
+    await expect(service.execute({ ...baseCommand('RECOVER'), idempotencyKey: 'idem-recover-success', commandId: 'cmd-recover-success' })).rejects.toMatchObject({ code: 'RECOVERY_REJECTED' });
   });
   it('recover delegates to existing recovery candidate processing without running inside HTTP', async () => {
     let calls = 0; const recovery = { retry: async (runId: string) => ({ runId }), recover: async (runId: string) => { calls += 1; return { runId }; } };
