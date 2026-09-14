@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { CreateRunCommand, RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { IdempotencyConflictError, RunNotFoundError } from '@agent-native/runtime';
-import { createStructuredLogEvent, safeEmit, safeMetric, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
+import { createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
 
 export interface DurableHandlerOptions {
   syncBudgetMs?: number;
@@ -28,7 +28,6 @@ export function createDurableHandler(runtime: RuntimeFacade, options: DurableHan
         const metadata = { ...suppliedMetadata, requestId, traceId, tenantId };
         const command: CreateRunCommand = { agentId: body.agentId, input: body.input, metadata, executionMode, idempotencyKey: request.headers.get('idempotency-key') ?? undefined };
         safeEmit(options.logger!, createStructuredLogEvent({ context: { ...context, agentId: body.agentId }, event: 'api.accepted', level: 'INFO', outcome: 'STARTED' }));
-        safeMetric(() => options.metrics?.increment('agent_run_started_total', 1, { agent: body.agentId as string, outcome: 'STARTED' }));
         const created = await runtime.createRun(command);
         if (executionMode === 'sync' && !created.replayed) {
           const result = await runtime.executeRunBounded(created.run.runId, owner, new Date(Date.now() + syncBudgetMs));
