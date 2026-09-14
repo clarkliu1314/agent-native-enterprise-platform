@@ -7,8 +7,7 @@ const record = (auditId: string, tenantId: string): AuditRecord => ({ auditId, t
 
 describe('audit query application/API boundary', () => {
   it('queries only the authenticated tenant and enforces bounded query parameters', async () => {
-    const repository = new InMemoryAuditRepository();
-    await repository.append(record('audit-a', 'tenant-a')); await repository.append(record('audit-b', 'tenant-b'));
+    const repository = new InMemoryAuditRepository(); await repository.append(record('audit-a', 'tenant-a')); await repository.append(record('audit-b', 'tenant-b'));
     const service = new AuditQueryService(repository, { authorize: () => true });
     const result = await service.query({ actorId: 'user-1', tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 100 });
     expect(result.items.map((item) => item.auditId)).toEqual(['audit-a']);
