@@ -10,7 +10,7 @@ function tx(): InvestmentSqlClient {
       if (sql.includes('FROM investment_opportunities')) return { rows: [{ opportunity_id: 'opp-1', tenant_id: 'tenant-a', company_id: 'co-1', company_name: 'Acme', stage: 'DRAFT', status: 'ACTIVE', owner_id: 'owner-1', created_at: '2026-09-14T09:00:00.000Z', updated_at: '2026-09-14T09:00:00.000Z', version: 1 }], rowCount: 1 };
       if (sql.includes('INSERT INTO investment_opportunities')) return { rows: [{ opportunity_id: 'opp-1', tenant_id: 'tenant-a', company_id: 'co-1', company_name: 'Acme', stage: 'DRAFT', status: 'ACTIVE', owner_id: 'owner-1', created_at: '2026-09-14T09:00:00.000Z', updated_at: '2026-09-14T09:00:00.000Z', version: 1 }], rowCount: 1 };
       if (sql.includes('FROM investment_decisions')) return { rows: [], rowCount: 0 };
-      if (sql.includes('INSERT INTO investment_decisions')) return { rows: [{ decision_id: 'decision-1', opportunity_id: 'opp-1', tenant_id: 'tenant-a', decision_cycle: 1, recommendation: 'APPROVE', rationale: 'approved', created_at: '2026-09-14T09:01:00.000Z', idempotency_key: 'decision:opp-1:1' }], rowCount: 1 };
+      if (sql.includes('INSERT INTO investment_decisions')) return { rows: [{ decision_id: 'decision-1', opportunity_id: 'opp-1', tenant_id: 'tenant-a', decision_cycle: 1, recommendation: 'APPROVE', rationale: 'approved', created_at: '2026-09-14T09:01:00.000Z', idempotency_key: 'investment-decision:opp-1:1' }], rowCount: 1 };
       if (sql.includes('UPDATE investment_opportunities')) return { rows: [], rowCount: 1 };
       rows.push({ sql });
       return { rows: [], rowCount: 1 };
@@ -24,7 +24,7 @@ describe('investment auditability', () => {
     const database = { transaction: async <T>(work: (tx: InvestmentSqlClient) => Promise<T>) => work(tx()) };
     const uow = new PostgresInvestmentUnitOfWork(database, undefined, audit);
     const service = new InvestmentApplicationService(uow);
-    const result = await service.approve({ tenantId: 'tenant-a', opportunityId: 'opp-1', decisionCycle: 1, recommendation: 'APPROVE', rationale: 'approved', actorId: 'user-1', idempotencyKey: 'decision:opp-1:1' });
+    const result = await service.approve({ tenantId: 'tenant-a', opportunityId: 'opp-1', decisionCycle: 1, recommendation: 'APPROVE', rationale: 'approved', actorId: 'user-1', idempotencyKey: 'investment-decision:opp-1:1' });
     const audits = await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 100 });
 
     expect(result.decisionId).toBe('decision-1');
