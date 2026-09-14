@@ -1,6 +1,6 @@
 # Agent-native Enterprise Platform Implementation Plan
 
-> **Current phase:** Stage 12 — Production Readiness & Operability; Task 12.2 Operational Control Plane active after Stage 12.1 mainline verification.
+> **Current phase:** Stage 12 — Production Readiness & Operability; Stage 12.2 Operational Control Plane implementation and final verification.
 
 The approved architecture baseline **A** remains locked. PostgreSQL is the durable source of truth; Redis is delivery/scheduling only; RuntimeFacade is the framework-neutral application boundary; API, Worker, Recovery, and Outbox Publisher are separate composition roots; the Run FSM is exactly `QUEUED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
 
@@ -100,7 +100,7 @@ Run #625 is the authoritative completion evidence for Stage 12.1.
 
 ### Stage 12.2 — Operational Control Plane
 
-**Status: ACTIVE — DESIGN/SPECIFICATION + RED GATE ESTABLISHED.**
+**Status: IMPLEMENTATION COMPLETE — FINAL MAINLINE VERIFICATION PENDING.**
 
 Goal: provide safe, tenant-scoped, actor-attributed pause/resume/retry/cancel/recover operations while reusing the existing runtime, recovery, fencing, idempotency, and outbox architecture.
 
@@ -116,31 +116,37 @@ Execution branch / PR:
 
 - Branch: `feat/stage12-2-operational-control-plane`
 - PR #27 (draft)
-- RED gate commit: `6b50ed8fc7411ad28bdfd051b00d30ffabda5193`
+- RED gate established before implementation.
 
-Engineering gates:
+Completed implementation tasks:
 
-- TDD RED gate before production implementation.
-- No second runtime.
-- No direct SQL in HTTP handlers.
-- PostgreSQL remains authoritative; Redis remains delivery/scheduling only.
-- Retry/recover reuse existing recovery infrastructure.
-- Control events are audit-ready and safe for Stage 12.3.
+1. Framework-neutral operational control command contract.
+2. Durable control service with authorization, tenant isolation, optimistic concurrency, idempotency, and transaction/outbox semantics.
+3. Pause/resume/cancel worker semantics using durable control intent and existing fencing boundaries.
+4. Retry/recover delegation to existing recovery semantics without manufacturing `RUNNING`.
+5. Stateless API control endpoints and bounded-request handoff.
+6. Production-composition E2E verification across API → PostgreSQL → worker/recovery → outbox.
+7. Production worker composition corrected to use PostgreSQL-backed operational control by default; absent legacy control state is treated as no operator intent rather than blocking execution.
 
-Execution order:
+Task 7 authoritative verification:
 
-1. Inspect and map existing command/permission/run persistence/outbox contracts.
-2. Implement framework-neutral control command contract.
-3. Implement durable control service and transaction/outbox semantics.
-4. Implement pause/resume/cancel worker semantics.
-5. Implement retry/recover delegation.
-6. Add stateless API control endpoints.
-7. Add production-composition E2E verification.
-8. Run full benchmark/test/typecheck/build gates, merge, and record final mainline evidence.
+- **Run #670 — GREEN** on commit `3d9f3b8086ae4d6c0d104d187881a3d81cb1b302`.
+- Verified Typecheck, API Typecheck, API Build, Deployment Boundary, 64/64 Benchmark, full tests, and Compose Smoke.
+- The production composition uses PostgreSQL for operational control in both API and Worker composition roots.
+
+Task 8 finalization checklist:
+
+- [x] Review architecture for second-runtime, direct-SQL, Redis-state, sensitive-data, and telemetry-coupling violations.
+- [x] Close Stage 12.2 specification status after implementation evidence.
+- [ ] Run final branch-head CI after documentation closeout.
+- [ ] Mark PR #27 Ready for Review only after final branch-head CI is GREEN.
+- [ ] Merge PR #27 only after all required CI gates are GREEN.
+- [ ] Verify the final merge commit with authoritative mainline CI.
+- [ ] Record final merge SHA and mainline CI run here.
 
 ### Stage 12 roadmap
 
-After Task 12.2 closes, the remaining production-readiness workstreams are:
+After Stage 12.2 closes, the remaining production-readiness workstreams are:
 
 - **12.3 Auditability:** immutable operational/business audit records and queryable actor/action/reason metadata.
 - **12.4 Failure & SLO:** explicit SLI/SLO definitions, alert thresholds, timeout/backpressure policy, and failure-injection tests.
