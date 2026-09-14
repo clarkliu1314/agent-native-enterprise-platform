@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { MemoryObservabilityMetrics } from '@agent-native/observability';
 import { OutboxPublisher, type OutboxMessage, type OutboxRepository } from './publisher';
 import type { ObservabilityLogger } from '@agent-native/observability';
 
@@ -52,5 +53,21 @@ describe('OutboxPublisher observability', () => {
     await publisher.publishBatch(1, 'publisher-2');
 
     expect(events[0].context).toMatchObject({ requestId: 'req-recovery', traceId: 'trace-durable', tenantId: 'tenant-2', runId: 'run-2' });
+  });
+
+  it('records canonical publish metrics', async () => {
+    const metrics = new MemoryObservabilityMetrics();
+    const message: OutboxMessage = { eventId: 'evt-metrics-1', eventType: 'tool.execution.completed', payload: {}, correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-1' } };
+    const repository: OutboxRepository = {
+      claim: vi.fn().mockResolvedValue([message]),
+      markPublished: vi.fn().mockResolvedValue(undefined),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await new OutboxPublisher(repository, async () => undefined, { metrics }).publishBatch(1, 'publisher-1');
+
+    expect(metrics.entries()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'agent_outbox_publish_total', labels: expect.objectContaining({ outcome: 'PUBLISHED' }) }),
+    ]));
   });
 });
