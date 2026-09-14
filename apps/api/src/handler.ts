@@ -1,6 +1,7 @@
 import { DeploymentApplication } from '@agent-native/deployment-boundary';
 import type { AgentRuntime, StartRunInput } from '@agent-native/runtime-contract';
 export { createDurableHandler } from './durable-handler';
+export { createOperationalControlHandler } from './operational-control-handler';
 export { composeApi } from './composition';
 
 export function createHandler(application: DeploymentApplication) {
