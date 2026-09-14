@@ -3,6 +3,7 @@ import {
   DurableWorker,
   OperationalControlService,
   PostgresDatabase,
+  PostgresOperationalControlRepository,
   PostgresToolRepositories,
 } from '@agent-native/runtime';
 import type { QueueConsumer, RuntimeAdapter } from '@agent-native/runtime';
@@ -37,7 +38,9 @@ function createWorkerComposition(
     leaseMs: options.leaseMs,
     heartbeatMs: options.heartbeatMs,
   });
-  const control = options.operationalControl ?? new OperationalControlService();
+  const control = options.operationalControl ?? new OperationalControlService({
+    repository: new PostgresOperationalControlRepository(database),
+  });
   const worker = new DurableWorker(runtime, consumer, {
     owner: options.owner ?? `worker-${process.pid}`,
     executionSliceMs: options.executionSliceMs,
