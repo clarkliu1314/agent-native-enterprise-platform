@@ -70,7 +70,7 @@ describeIfDatabase('Stage 12.2 Task 7 production-composition E2E', () => {
   };
 
   const control = async (runId: string, tenantId: string, action: string, key: string, commandId: string) => {
-    return api.controlHandler(new Request(`https://example.test/api/runs/${encodeURIComponent(runId)}/${action.toLowerCase()}`, {
+    return api.vercelHandler(new Request(`https://example.test/api/runs/${encodeURIComponent(runId)}/${action.toLowerCase()}`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
