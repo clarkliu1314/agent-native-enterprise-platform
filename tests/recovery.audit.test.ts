@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { InMemoryAuditRepository } from '../packages/runtime/src/auditability';
 import { RecoveryCoordinator } from '../packages/durability/src/recovery';
-import { ToolExecutionService, type ToolExecutionRequest, type ToolExecutionStore } from '@agent-native/tool-runtime';
+import { ToolExecutionService, type ToolExecutionRequest, type ToolExecutionStore } from '../packages/tool-runtime/src/tool-execution';
 
 const request: ToolExecutionRequest = {
   tool: { name: 'reserve', description: 'reserve a resource', sideEffect: true },
