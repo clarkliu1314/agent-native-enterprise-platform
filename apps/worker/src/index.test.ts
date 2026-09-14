@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { QueueConsumer, RuntimeAdapter } from '@agent-native/runtime';
+import { OperationalControlService } from '@agent-native/runtime';
 import { composeWorker } from './index';
 
 const adapter: RuntimeAdapter = {
@@ -21,5 +22,15 @@ describe('worker composition root', () => {
     expect(composition.repositories).toBeDefined();
     expect(composition.worker).toBeDefined();
     expect(composition.worker).not.toBeNull();
+  });
+
+  it('wires the durable operational control service into the production worker composition', () => {
+    const operationalControl = new OperationalControlService();
+    const composition = composeWorker(adapter, consumer, {
+      owner: 'worker-control-test',
+      operationalControl,
+    });
+
+    expect(composition.worker).toBeDefined();
   });
 });
