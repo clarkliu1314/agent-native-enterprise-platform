@@ -7,7 +7,7 @@ function tx(): InvestmentSqlClient {
   const rows: Record<string, unknown>[] = [];
   return {
     async query(sql: string) {
-      if (sql.includes('FROM investment_opportunities')) return { rows: [{ opportunity_id: 'opp-1', tenant_id: 'tenant-a', company_id: 'co-1', company_name: 'Acme', stage: 'DRAFT', status: 'ACTIVE', owner_id: 'owner-1', created_at: '2026-09-14T09:00:00.000Z', updated_at: '2026-09-14T09:00:00.000Z', version: 1 }], rowCount: 1 };
+      if (sql.includes('FROM investment_opportunities')) return { rows: [{ opportunity_id: 'opp-1', tenant_id: 'tenant-a', company_id: 'co-1', company_name: 'Acme', stage: 'IC_REVIEW', status: 'ACTIVE', owner_id: 'owner-1', created_at: '2026-09-14T09:00:00.000Z', updated_at: '2026-09-14T09:00:00.000Z', version: 4 }], rowCount: 1 };
       if (sql.includes('INSERT INTO investment_opportunities')) return { rows: [{ opportunity_id: 'opp-1', tenant_id: 'tenant-a', company_id: 'co-1', company_name: 'Acme', stage: 'DRAFT', status: 'ACTIVE', owner_id: 'owner-1', created_at: '2026-09-14T09:00:00.000Z', updated_at: '2026-09-14T09:00:00.000Z', version: 1 }], rowCount: 1 };
       if (sql.includes('FROM investment_decisions')) return { rows: [], rowCount: 0 };
       if (sql.includes('INSERT INTO investment_decisions')) return { rows: [{ decision_id: 'decision-1', opportunity_id: 'opp-1', tenant_id: 'tenant-a', decision_cycle: 1, recommendation: 'APPROVE', rationale: 'approved', created_at: '2026-09-14T09:01:00.000Z', idempotency_key: 'investment-decision:opp-1:1' }], rowCount: 1 };
