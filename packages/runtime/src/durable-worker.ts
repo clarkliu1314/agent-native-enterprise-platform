@@ -51,7 +51,8 @@ export class DurableWorker {
     safeMetric(() => this.options.metrics?.increment('agent_run_started_total', 1, { state: 'RUNNING' }));
     const deadlineAt = new Date(startedAt.getTime() + this.executionSliceMs);
     try {
-      await this.authorizeOperationalContinuation(runId);
+      const canContinue = await this.authorizeOperationalContinuation(runId);
+      if (!canContinue) return;
       await this.runtime.executeRunBounded(runId, this.options.owner, deadlineAt);
       if (this.options.logger && context) safeEmit(this.options.logger, createStructuredLogEvent({
         context, event: 'run.succeeded', level: 'INFO', outcome: 'SUCCEEDED',
@@ -69,26 +70,27 @@ export class DurableWorker {
     }
   }
 
-  private async authorizeOperationalContinuation(runId: string): Promise<void> {
+  private async authorizeOperationalContinuation(runId: string): Promise<boolean> {
     const control = this.options.operationalControl;
-    if (!control) return;
+    if (!control) return true;
 
     const durableRun = await this.runtime.getRun(runId);
-    if (!durableRun) return;
+    if (!durableRun) return true;
 
     const tenantId = typeof durableRun.metadata?.tenantId === 'string'
       ? durableRun.metadata.tenantId
       : undefined;
-    if (!tenantId) return;
+    if (!tenantId) return true;
 
     const state = await control.getControl(tenantId, runId);
-    if (state.paused) return;
+    if (state.paused) return false;
 
     await control.authorizeContinuation({
       tenantId,
       runId,
       fencingToken: durableRun.fencingToken,
     });
+    return true;
   }
 
   private async loadDurableCorrelation(runId: string): Promise<CorrelationContext | undefined> {
