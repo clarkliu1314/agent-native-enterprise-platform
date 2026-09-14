@@ -4,7 +4,9 @@ import {
   type ToolExecutionResult,
   type ToolExecutionService,
 } from '@agent-native/tool-runtime';
-import { classifyError, createStructuredLogEvent, safeEmit, safeMetric, type AuditRepository, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
+import { classifyError, createStructuredLogEvent, safeEmit, safeMetric, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
+import type { AuditRepository } from '@agent-native/runtime';
+import type { CorrelationContext } from '@agent-native/observability';
 
 export type RecoveryState = 'IN_PROGRESS' | 'SUCCEEDED' | 'FAILED_RETRYABLE' | 'FAILED_FINAL';
 export interface RecoveryCandidate { request: ToolExecutionRequest; state: RecoveryState; output?: unknown; correlation?: CorrelationContext; }
