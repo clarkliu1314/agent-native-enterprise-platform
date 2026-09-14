@@ -55,6 +55,8 @@ export class OperationalControlService {
     if (command.action === 'PAUSE') return { ...current, paused: true, version: current.version + 1 };
     if (command.action === 'RESUME') { if (current.cancelled || current.runState === 'CANCELLED' || current.runState === 'SUCCEEDED' || current.runState === 'FAILED') throw new OperationalControlError('INVALID_STATE_TRANSITION', 'Run cannot be resumed'); return { ...current, paused: false, version: current.version + 1 }; }
     if (command.action === 'CANCEL') return { ...current, cancelled: true, paused: false, runState: 'CANCELLED', version: current.version + 1, fencingToken: current.fencingToken + 1n };
+    if (command.action === 'RETRY') { if (current.runState !== 'FAILED') throw new OperationalControlError('RECOVERY_REJECTED', 'Retry requires a retryable failed run'); return current; }
+    if (command.action === 'RECOVER') { if (current.runState !== 'FAILED') throw new OperationalControlError('RECOVERY_REJECTED', 'Recover requires a retryable failed run'); return current; }
     return current;
   }
 }
