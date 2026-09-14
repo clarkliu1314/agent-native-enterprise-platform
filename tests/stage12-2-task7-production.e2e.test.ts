@@ -35,8 +35,17 @@ describeIfDatabase('Stage 12.2 Task 7 production-composition E2E', () => {
       const messages = published.splice(0);
       for (const message of messages) {
         const messageRunId = payloadRunId(message.payload);
-        if (messageRunId && runIds.includes(messageRunId)) await handler(message);
-        else published.push(message);
+        if (messageRunId && runIds.includes(messageRunId)) {
+          await handler(message);
+          if (message.topic === 'agent.run') {
+            const current = await api.runtime.getRun(messageRunId);
+            if (current.state !== 'SUCCEEDED' && current.state !== 'FAILED' && current.state !== 'CANCELLED') {
+              published.push(message);
+            }
+          }
+        } else {
+          published.push(message);
+        }
       }
     },
   };
@@ -129,8 +138,12 @@ describeIfDatabase('Stage 12.2 Task 7 production-composition E2E', () => {
   it('cancels durably and fences a stale worker before effectful continuation', async () => {
     const tenantId = `task7-cancel-${Date.now()}`;
     const runId = await createRun(tenantId);
+
+    const publishResult = await publisher.publisher.publishBatch(10);
+    expect(publishResult.published).toBeGreaterThanOrEqual(1);
+
     const before = await api.runtime.getRun(runId);
-    expect(before?.fencingToken).toBe(1n);
+    expect(before?.fencingToken).toBe(0n);
 
     const cancelResponse = await control(runId, tenantId, 'CANCEL', `task7-cancel-${runId}`, `task7-cancel-${runId}`);
     expect(cancelResponse.status).toBe(202);
@@ -138,9 +151,8 @@ describeIfDatabase('Stage 12.2 Task 7 production-composition E2E', () => {
 
     const cancelled = await api.runtime.getRun(runId);
     expect(cancelled?.state).toBe('CANCELLED');
-    expect(cancelled?.fencingToken).toBe(2n);
+    expect(cancelled?.fencingToken).toBe(1n);
 
-    await publisher.publisher.publishBatch(10);
     await expect(worker.worker.start()).rejects.toThrow();
     const afterWorker = await api.runtime.getRun(runId);
     expect(afterWorker?.state).toBe('CANCELLED');
