@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createOperationalControlHandler } from '../apps/api/src/operational-control-handler';
-import { OperationalControlError } from '@agent-native/runtime';
+import { OperationalControlError } from '../packages/runtime/src/operational-control';
 
 function makeResult(action: string, replayed = false) {
   return {
