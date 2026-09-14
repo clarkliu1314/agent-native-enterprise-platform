@@ -1,23 +1,13 @@
 import type { RunView } from '@agent-native/runtime-contract/durable';
-import { DurableRuntimeService, PostgresRuntimeRepositories, type RuntimeAdapter, type SqlClient, type TransactionRunner } from '@agent-native/runtime';
+import { DurableRuntimeService, PostgresAuditRepository, PostgresRuntimeRepositories, type AuditRepository, type RuntimeAdapter, type SqlClient, type TransactionRunner } from '@agent-native/runtime';
 import type { InvestmentWorkflowRuntime } from './runtime-port';
 
-/**
- * Database boundary required by the authoritative PostgreSQL runtime.
- * Reusing the runtime transaction contract prevents the investment domain
- * from inventing a weaker transaction abstraction that cannot safely back
- * durable state transitions.
- */
 export type InvestmentWorkflowDatabase = TransactionRunner & SqlClient;
 
 const STEPS = ['research', 'due_diligence', 'analysis', 'recommendation'] as const;
 
 type WorkflowMetadata = { tenantId: string; opportunityId: string; nextStep: number };
 
-/**
- * Runtime adapter for investment business-step progression. The durable
- * runtime remains the authority for admission, claim, lease and fencing.
- */
 export class InvestmentWorkflowRuntimeAdapter implements RuntimeAdapter {
   readonly name = 'investment-workflow';
   readonly version = '1';
@@ -36,9 +26,7 @@ export class InvestmentWorkflowRuntimeAdapter implements RuntimeAdapter {
     const tenantId = String(metadata.tenantId ?? '');
     const opportunityId = String(metadata.opportunityId ?? '');
 
-    if (nextStep >= STEPS.length) {
-      return { kind: 'SUCCEEDED', output: { opportunityId, approved: true } };
-    }
+    if (nextStep >= STEPS.length) return { kind: 'SUCCEEDED', output: { opportunityId, approved: true } };
 
     while (nextStep < STEPS.length) {
       if (input.signal?.aborted) throw new DOMException('Run execution aborted', 'AbortError');
@@ -66,21 +54,15 @@ export class InvestmentWorkflowRuntimeAdapter implements RuntimeAdapter {
     return { kind: 'WAITING', output: { opportunityId, nextStep } };
   }
 
-  serializeCheckpoint(state: unknown): Uint8Array {
-    return Buffer.from(JSON.stringify(state));
-  }
-
-  deserializeCheckpoint(payload: Uint8Array): unknown {
-    return JSON.parse(Buffer.from(payload).toString('utf8'));
-  }
+  serializeCheckpoint(state: unknown): Uint8Array { return Buffer.from(JSON.stringify(state)); }
+  deserializeCheckpoint(payload: Uint8Array): unknown { return JSON.parse(Buffer.from(payload).toString('utf8')); }
 }
 
-/** Investment facade over the authoritative durable runtime service. */
 export class PostgresInvestmentWorkflowRuntime implements InvestmentWorkflowRuntime {
   private readonly runtime: DurableRuntimeService;
 
-  constructor(database: InvestmentWorkflowDatabase, adapter?: RuntimeAdapter) {
-    const repositories = new PostgresRuntimeRepositories(database);
+  constructor(database: InvestmentWorkflowDatabase, adapter?: RuntimeAdapter, audit?: AuditRepository) {
+    const repositories = new PostgresRuntimeRepositories(database, audit instanceof PostgresAuditRepository ? audit : undefined);
     this.runtime = new DurableRuntimeService(repositories, {
       adapter: adapter ?? new InvestmentWorkflowRuntimeAdapter(database, repositories),
     });
@@ -96,11 +78,6 @@ export class PostgresInvestmentWorkflowRuntime implements InvestmentWorkflowRunt
     });
   }
 
-  approveRun(runId: string, approvalId: string): Promise<RunView> {
-    return this.runtime.approveRun(runId, approvalId);
-  }
-
-  getRun(runId: string): Promise<RunView> {
-    return this.runtime.getRun(runId);
-  }
+  approveRun(runId: string, approvalId: string): Promise<RunView> { return this.runtime.approveRun(runId, approvalId); }
+  getRun(runId: string): Promise<RunView> { return this.runtime.getRun(runId); }
 }
