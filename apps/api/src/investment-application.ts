@@ -1,4 +1,4 @@
-import { InvestmentApplicationService, PostgresInvestmentUnitOfWork, type InvestmentDatabase } from '../../../packages/investment-domain/src/application-service';
+import { InvestmentApplicationService, PostgresInvestmentUnitOfWork } from '../../../packages/investment-domain/src/application-service';
 import type { AdvanceOpportunityStageCommand, ApproveInvestmentCommand, CreateOpportunityCommand, InvestmentDecisionCommand, RejectInvestmentCommand } from '../../../packages/investment-domain/src/commands';
 import { InvestmentWorkflow } from '../../../packages/investment-domain/src/workflow';
 import { PostgresInvestmentWorkflowRuntime, type InvestmentWorkflowDatabase } from '../../../packages/investment-domain/src/postgres-workflow-runtime';
@@ -20,9 +20,7 @@ export class InvestmentApiApplicationAdapter implements InvestmentApiApplication
   ) {
     const audit = new PostgresAuditRepository(database);
     this.service = service ?? new InvestmentApplicationService(new PostgresInvestmentUnitOfWork(database, undefined, audit));
-    const repositories = undefined;
     this.workflowRuntime = workflowRuntime ?? new PostgresInvestmentWorkflowRuntime(database, undefined, audit);
-    void repositories;
     this.workflow = new InvestmentWorkflow(this.workflowRuntime);
   }
 
