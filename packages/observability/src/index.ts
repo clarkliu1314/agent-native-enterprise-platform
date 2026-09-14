@@ -61,12 +61,29 @@ const EVENT_NAMES = new Set<ObservabilityEventName>([
   'outbox.published', 'outbox.failed', 'outbox.retried',
 ]);
 
+const STABLE_ERROR_CODES = new Set<StableErrorCode>([
+  'AUTHORIZATION_DENIED',
+  'IDEMPOTENCY_CONFLICT',
+  'STALE_FENCING_TOKEN',
+  'RUN_NOT_FOUND',
+  'INVALID_STATE_TRANSITION',
+  'RECOVERY_LEASE_LOST',
+  'RECOVERY_RETRYABLE',
+  'RECOVERY_FINAL',
+  'OUTBOX_PUBLISH_FAILED',
+  'INTERNAL_ERROR',
+]);
+
 function assertCorrelation(context: CorrelationContext): void {
   if (!context.requestId || !context.traceId || !context.tenantId) throw new Error('observability event requires requestId, traceId, and tenantId');
 }
 
 export function classifyError(error: unknown): StableErrorCode {
   if (!(error instanceof Error)) return 'INTERNAL_ERROR';
+  const explicitCode = (error as Error & { code?: unknown }).code;
+  if (typeof explicitCode === 'string' && STABLE_ERROR_CODES.has(explicitCode as StableErrorCode)) {
+    return explicitCode as StableErrorCode;
+  }
   switch (error.name) {
     case 'ToolPermissionDeniedError': return 'AUTHORIZATION_DENIED';
     case 'IdempotencyConflictError':
