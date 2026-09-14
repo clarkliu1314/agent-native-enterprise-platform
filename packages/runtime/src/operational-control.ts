@@ -22,8 +22,18 @@ export class InMemoryOperationalControlRepository implements OperationalControlR
 export interface OperationalControlServiceOptions { repository?: OperationalControlRepository; recovery?: RecoveryDelegator; telemetry?: TelemetrySink; authorization?: AuthorizationPolicy; }
 export class OperationalControlService {
   private readonly repository: OperationalControlRepository; private readonly recovery?: RecoveryDelegator; private readonly telemetry?: TelemetrySink; private readonly authorization: AuthorizationPolicy;
+  private readonly locks = new Map<string, Promise<void>>();
   constructor(options: OperationalControlServiceOptions = {}) { this.repository = options.repository ?? new InMemoryOperationalControlRepository(); this.recovery = options.recovery; this.telemetry = options.telemetry; this.authorization = options.authorization ?? { authorize: (actorId) => actorId !== 'unauthorized' }; }
   async execute(command: OperationalControlCommand): Promise<OperationalControlResult> {
+    const key = `${command.tenantId}:${command.runId}`;
+    const previous = this.locks.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    this.locks.set(key, current);
+    await previous;
+    try { return await this.executeLocked(command); } finally { release(); if (this.locks.get(key) === current) this.locks.delete(key); }
+  }
+  private async executeLocked(command: OperationalControlCommand): Promise<OperationalControlResult> {
     const existing = await this.repository.findByIdempotency(command.tenantId, command.idempotencyKey); if (existing) return { ...existing, replayed: true, eventsCreated: 0 };
     if (command.correlation.tenantId !== command.tenantId) throw new OperationalControlError('AUTHORIZATION_DENIED', 'Correlation tenant mismatch');
     if (!(await this.authorization.authorize(command.actorId, command.action, command.tenantId, command.runId))) throw new OperationalControlError('AUTHORIZATION_DENIED', 'Operational control is not authorized');
