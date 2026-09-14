@@ -14,6 +14,7 @@ export { CheckpointService } from './checkpoint-service';
 export { OperationalControlService, OperationalControlError, InMemoryOperationalControlRepository } from './operational-control';
 export { PostgresOperationalControlRepository } from './postgres-operational-control-repository';
 export { PostgresAuditRepository } from './postgres-audit-repository';
+export { AuditQueryService } from './audit-query-service';
 export type * from './auditability';
 export type * from './operational-control';
 export type * from './ports';
