@@ -16,44 +16,20 @@ export interface TransactionalAuditRepository extends AuditRepository { appendIn
 export function buildRunAuditRecord(input: { run: RunView; tenantId: string; version: number; from: RunView['state']; action: string; actorId: string; occurredAt: string; correlation: Pick<AuditCorrelation, 'requestId' | 'traceId'> }): AuditRecord {
   const workflowId = typeof input.run.metadata?.workflowId === 'string' ? input.run.metadata.workflowId : undefined;
   const agentId = input.run.agentId;
-  return {
-    auditId: `audit:${input.run.runId}:${input.action}:${input.version}`,
-    tenantId: input.tenantId,
-    occurredAt: input.occurredAt,
-    actorId: input.actorId,
-    actorType: 'SYSTEM',
-    action: input.action,
-    resourceType: 'RUN',
-    resourceId: input.run.runId,
-    outcome: input.run.state === 'FAILED' ? 'FAILED' : 'SUCCEEDED',
-    reasonClass: 'NONE',
-    correlation: { ...input.correlation, runId: input.run.runId, ...(workflowId ? { workflowId } : {}), ...(agentId ? { agentId } : {}) },
-    version: input.version,
-    metadata: { fromState: input.from, resultingState: input.run.state },
-  };
+  return { auditId: `audit:${input.run.runId}:${input.action}:${input.version}`, tenantId: input.tenantId, occurredAt: input.occurredAt, actorId: input.actorId, actorType: 'SYSTEM', action: input.action, resourceType: 'RUN', resourceId: input.run.runId, outcome: input.run.state === 'FAILED' ? 'FAILED' : 'SUCCEEDED', reasonClass: 'NONE', correlation: { ...input.correlation, runId: input.run.runId, ...(workflowId ? { workflowId } : {}), ...(agentId ? { agentId } : {}) }, version: input.version, metadata: { fromState: input.from, resultingState: input.run.state } };
 }
 
 export function buildRunLifecycleAuditRecord(input: { run: RunView; tenantId: string; version: number; action: string; actorId?: string; occurredAt: string; correlation: Pick<AuditCorrelation, 'requestId' | 'traceId'>; fromState?: RunView['state'] }): AuditRecord {
   const workflowId = typeof input.run.metadata?.workflowId === 'string' ? input.run.metadata.workflowId : undefined;
-  return {
-    auditId: `audit:${input.run.runId}:${input.action}:${input.version}`,
-    tenantId: input.tenantId,
-    occurredAt: input.occurredAt,
-    actorId: input.actorId ?? 'system',
-    actorType: 'SYSTEM',
-    action: input.action,
-    resourceType: 'RUN',
-    resourceId: input.run.runId,
-    outcome: input.run.state === 'FAILED' ? 'FAILED' : 'SUCCEEDED',
-    reasonClass: 'NONE',
-    correlation: { ...input.correlation, runId: input.run.runId, ...(workflowId ? { workflowId } : {}), ...(input.run.agentId ? { agentId: input.run.agentId } : {}) },
-    version: input.version,
-    metadata: { ...(input.fromState ? { fromState: input.fromState } : {}), resultingState: input.run.state },
-  };
+  return { auditId: `audit:${input.run.runId}:${input.action}:${input.version}`, tenantId: input.tenantId, occurredAt: input.occurredAt, actorId: input.actorId ?? 'system', actorType: 'SYSTEM', action: input.action, resourceType: 'RUN', resourceId: input.run.runId, outcome: input.run.state === 'FAILED' ? 'FAILED' : 'SUCCEEDED', reasonClass: 'NONE', correlation: { ...input.correlation, runId: input.run.runId, ...(workflowId ? { workflowId } : {}), ...(input.run.agentId ? { agentId: input.run.agentId } : {}) }, version: input.version, metadata: { ...(input.fromState ? { fromState: input.fromState } : {}), resultingState: input.run.state } };
 }
 
-const FORBIDDEN_KEYS = /^(prompt|completion|password|token|secret|apiKey|authorization|cookie|input|output|body|privateKey|credential|credentials)$/i;
+const FORBIDDEN_KEY_PARTS = ['prompt', 'completion', 'password', 'token', 'secret', 'apikey', 'authorization', 'cookie', 'input', 'output', 'body', 'privatekey', 'credential'];
 const MAX_LIMIT = 100;
+function isForbiddenKey(key: string): boolean {
+  const normalized = key.replace(/[^a-z0-9]/gi, '').toLowerCase();
+  return FORBIDDEN_KEY_PARTS.some((part) => normalized.includes(part));
+}
 export function validateAuditRecord(record: AuditRecord): void {
   if (!record.auditId || !record.tenantId || !record.actorId || !record.action || !record.resourceType || !record.resourceId) throw new Error('INVALID_AUDIT_RECORD');
   if (!['USER', 'SERVICE', 'SYSTEM'].includes(record.actorType)) throw new Error('INVALID_AUDIT_ACTOR');
@@ -62,7 +38,8 @@ export function validateAuditRecord(record: AuditRecord): void {
   if (!record.correlation.requestId || !record.correlation.traceId) throw new Error('INVALID_AUDIT_CORRELATION');
   if (!Number.isInteger(record.version ?? 0) || (record.version ?? 0) < 0) throw new Error('INVALID_AUDIT_VERSION');
   if (!Number.isFinite(Date.parse(record.occurredAt))) throw new Error('INVALID_AUDIT_TIMESTAMP');
-  for (const [key, value] of Object.entries(record.metadata)) { if (FORBIDDEN_KEYS.test(key)) throw new Error('SENSITIVE_AUDIT_DATA'); if (!['string', 'number', 'boolean'].includes(typeof value) && value !== null) throw new Error('INVALID_AUDIT_METADATA'); }
+  if (!record.metadata || typeof record.metadata !== 'object' || Array.isArray(record.metadata)) throw new Error('INVALID_AUDIT_METADATA');
+  for (const [key, value] of Object.entries(record.metadata)) { if (isForbiddenKey(key)) throw new Error('SENSITIVE_AUDIT_DATA'); if (!['string', 'number', 'boolean'].includes(typeof value) && value !== null) throw new Error('INVALID_AUDIT_METADATA'); }
 }
 export class InMemoryAuditRepository implements AuditRepository, TransactionalAuditRepository {
   private readonly records: AuditRecord[] = [];
