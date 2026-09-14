@@ -53,8 +53,9 @@ jobs:
           docker run --rm --network host \
             -e PGPASSWORD=postgres \
             -v "$PWD/infra/compose/migrate.sql:/migrate.sql:ro" \
+            -v "$PWD/infra/compose/002-auditability.sql:/auditability.sql:ro" \
             postgres:17-alpine \
-            psql -h 127.0.0.1 -U postgres -d agent_native -v ON_ERROR_STOP=1 -f /migrate.sql
+            sh -ec 'psql -h 127.0.0.1 -U postgres -d agent_native -v ON_ERROR_STOP=1 -f /migrate.sql && psql -h 127.0.0.1 -U postgres -d agent_native -v ON_ERROR_STOP=1 -f /auditability.sql'
       - name: Typecheck
         run: pnpm typecheck
       - name: Typecheck API
