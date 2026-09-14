@@ -1,4 +1,4 @@
-import { classifyError, createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
+import { classifyError, createStructuredLogEvent, safeEmit, safeMetric, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
 
 export interface ToolDefinition { name: string; description: string; sideEffect: boolean; }
 export interface ToolExecutionContext { actorId: string; tenantId: string; permissions: string[]; }
@@ -27,7 +27,7 @@ export interface ToolExecutionDependencies {
   persistResultAndPublishOutbox?: (commit: ToolExecutionCommit) => Promise<void>;
   store?: ToolExecutionStore;
 }
-export interface ToolExecutionObservabilityOptions { logger?: ObservabilityLogger; correlation?: CorrelationContext; }
+export interface ToolExecutionObservabilityOptions { logger?: ObservabilityLogger; metrics?: ObservabilityMetrics; correlation?: CorrelationContext; }
 
 export class ToolPermissionDeniedError extends Error { constructor(toolName: string) { super(`Tool permission denied: ${toolName}`); this.name = 'ToolPermissionDeniedError'; } }
 export class IdempotencyConflictError extends Error { constructor(idempotencyKey: string) { super(`Idempotency key conflict: ${idempotencyKey}`); this.name = 'IdempotencyConflictError'; } }
@@ -45,6 +45,8 @@ export class ToolExecutionService {
     const context = this.observability.correlation ? { ...this.observability.correlation, tenantId: request.context.tenantId } : undefined;
     if (!(await this.dependencies.authorize(request))) {
       if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.rejected', level: 'WARN', outcome: 'REJECTED', errorCode: 'AUTHORIZATION_DENIED', attributes: { toolName: request.tool.name } }));
+      safeMetric(() => this.observability.metrics?.increment('agent_tool_execution_total', 1, { tool: request.tool.name, outcome: 'REJECTED' }));
+      safeMetric(() => this.observability.metrics?.increment('agent_tool_execution_failed_total', 1, { tool: request.tool.name, error_code: 'AUTHORIZATION_DENIED' }));
       throw new ToolPermissionDeniedError(request.tool.name);
     }
 
@@ -54,6 +56,7 @@ export class ToolExecutionService {
       if (reservation.kind === 'REPLAY') {
         await durable.reconcileReplay?.(request, reservation.output);
         if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.replayed', level: 'INFO', outcome: 'SUCCEEDED', attributes: { toolName: request.tool.name, replayed: true } }));
+        safeMetric(() => this.observability.metrics?.increment('agent_tool_execution_total', 1, { tool: request.tool.name, outcome: 'REPLAYED' }));
         return { output: reservation.output, replayed: true };
       }
       if (reservation.kind === 'CONFLICT') {
@@ -65,6 +68,7 @@ export class ToolExecutionService {
       const existing = this.results.get(request.idempotencyKey);
       if (existing) {
         if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.replayed', level: 'INFO', outcome: 'SUCCEEDED', attributes: { toolName: request.tool.name, replayed: true } }));
+        safeMetric(() => this.observability.metrics?.increment('agent_tool_execution_total', 1, { tool: request.tool.name, outcome: 'REPLAYED' }));
         return { ...existing, replayed: true };
       }
     }
@@ -73,6 +77,7 @@ export class ToolExecutionService {
     if (existing) {
       const result = await existing;
       if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.replayed', level: 'INFO', outcome: 'SUCCEEDED', attributes: { toolName: request.tool.name, replayed: true } }));
+      safeMetric(() => this.observability.metrics?.increment('agent_tool_execution_total', 1, { tool: request.tool.name, outcome: 'REPLAYED' }));
       return { ...result, replayed: true };
     }
     if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.started', level: 'INFO', outcome: 'STARTED', attributes: { toolName: request.tool.name, sideEffect: request.tool.sideEffect } }));
@@ -82,9 +87,12 @@ export class ToolExecutionService {
     try {
       const result = await execution;
       if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.succeeded', level: 'INFO', outcome: 'SUCCEEDED', durationMs: Date.now() - startedAt, attributes: { toolName: request.tool.name, replayed: false } }));
+      safeMetric(() => this.observability.metrics?.increment('agent_tool_execution_total', 1, { tool: request.tool.name, outcome: 'SUCCEEDED' }));
       return result;
     } catch (error) {
       if (this.observability.logger && context) safeEmit(this.observability.logger, createStructuredLogEvent({ context, event: 'tool.failed', level: 'ERROR', outcome: 'FAILED', durationMs: Date.now() - startedAt, errorCode: classifyError(error), attributes: { toolName: request.tool.name } }));
+      safeMetric(() => this.observability.metrics?.increment('agent_tool_execution_total', 1, { tool: request.tool.name, outcome: 'FAILED' }));
+      safeMetric(() => this.observability.metrics?.increment('agent_tool_execution_failed_total', 1, { tool: request.tool.name, error_code: classifyError(error) }));
       throw error;
     } finally { this.inFlight.delete(request.idempotencyKey); }
   }
