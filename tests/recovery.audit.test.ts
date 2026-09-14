@@ -1,61 +1,47 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { InMemoryAuditRepository } from '../packages/runtime/src/auditability';
-import { RecoveryCoordinator } from '../packages/runtime/src/recovery-coordinator';
-import type { RuntimeAdapter, QueuePublisher } from '../packages/runtime/src/ports';
-import type { DurableRepositories } from '../packages/runtime/src/repositories';
+import { RecoveryCoordinator } from '../packages/durability/src/recovery';
+import { ToolExecutionService, type ToolExecutionRequest, type ToolExecutionStore } from '@agent-native/tool-runtime';
 
-const adapter: RuntimeAdapter = {
-  name: 'test',
-  version: '1',
-  async run() { return { kind: 'SUCCEEDED' }; },
-  serializeCheckpoint() { return new Uint8Array(); },
-  deserializeCheckpoint() { return {}; },
+const request: ToolExecutionRequest = {
+  tool: { name: 'reserve', description: 'reserve a resource', sideEffect: true },
+  input: { resourceId: 'r-1' },
+  context: { actorId: 'actor-1', tenantId: 'tenant-a', permissions: ['reserve:write'] },
+  idempotencyKey: 'idem-recovery-1',
 };
 
-describe('recovery auditability', () => {
-  it('records one SYSTEM audit fact when an expired run is successfully scheduled for recovery', async () => {
-    const audit = new InMemoryAuditRepository();
-    const queue: QueuePublisher = { publish: async () => undefined };
-    const repos = {
-      findExpiredRuns: async () => [{
-        runId: 'run-recovery-1', agentId: 'agent-1', state: 'RUNNING' as const, input: {},
-        metadata: { tenantId: 'tenant-a', requestId: 'req-1', traceId: 'trace-1' },
-        fencingToken: 4n, attempt: 2, createdAt: '2026-09-14T09:00:00.000Z',
-      }],
-    } as unknown as DurableRepositories;
+function storeFor(state: 'IN_PROGRESS' | 'FAILED_FINAL' | 'SUCCEEDED'): ToolExecutionStore {
+  return {
+    reserve: vi.fn().mockResolvedValue(state === 'SUCCEEDED' ? { kind: 'REPLAY', state: 'SUCCEEDED', output: { reservationId: 'res-1' } } : state === 'FAILED_FINAL' ? { kind: 'CONFLICT', state: 'FAILED_FINAL' } : { kind: 'RETRY', state: 'FAILED_RETRYABLE' }),
+    get: vi.fn().mockResolvedValue(null),
+    commit: vi.fn().mockResolvedValue(undefined),
+    fail: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
-    const coordinator = new RecoveryCoordinator(repos, adapter, 30_000, queue, {}, audit);
-    const outcomes = await coordinator.recoverExpired(1);
+describe('durable recovery auditability', () => {
+  it('records a successful recovery outcome as a SYSTEM audit fact', async () => {
+    const audit = new InMemoryAuditRepository();
+    const execute = vi.fn().mockResolvedValue({ reservationId: 'res-1' });
+    const service = new ToolExecutionService({ authorize: async () => true, execute, store: storeFor('IN_PROGRESS') });
+    const coordinator = new RecoveryCoordinator(service, { audit });
+
+    await coordinator.recover({ request, state: 'IN_PROGRESS', correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-a', runId: 'run-1' } });
     const result = await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 100 });
 
-    expect(outcomes).toEqual([{ runId: 'run-recovery-1', recovered: true, action: 'RECLAIMED' }]);
     expect(result.items).toHaveLength(1);
-    expect(result.items[0]).toMatchObject({
-      actorId: 'system', actorType: 'SYSTEM', action: 'RECOVERY_RECLAIMED',
-      resourceType: 'RUN', resourceId: 'run-recovery-1', outcome: 'SUCCEEDED',
-      reasonClass: 'SYSTEM',
-      correlation: { requestId: 'req-1', traceId: 'trace-1', runId: 'run-recovery-1' },
-      metadata: { attempt: 2 },
-    });
+    expect(result.items[0]).toMatchObject({ actorId: 'system', actorType: 'SYSTEM', action: 'RECOVERY_SUCCEEDED', resourceType: 'RUN', resourceId: 'run-1', outcome: 'SUCCEEDED', reasonClass: 'SYSTEM', correlation: { requestId: 'req-1', traceId: 'trace-1', runId: 'run-1' } });
   });
 
-  it('records one FAILED SYSTEM audit fact when recovery scheduling fails', async () => {
+  it('records a terminal recovery outcome as a FAILED SYSTEM audit fact', async () => {
     const audit = new InMemoryAuditRepository();
-    const queue: QueuePublisher = { publish: async () => { throw new Error('queue unavailable'); } };
-    const repos = {
-      findExpiredRuns: async () => [{
-        runId: 'run-recovery-2', agentId: 'agent-1', state: 'RUNNING' as const, input: {},
-        metadata: { tenantId: 'tenant-a', requestId: 'req-2', traceId: 'trace-2' },
-        fencingToken: 5n, attempt: 3, createdAt: '2026-09-14T09:00:00.000Z',
-      }],
-    } as unknown as DurableRepositories;
+    const service = new ToolExecutionService({ authorize: async () => true, execute: vi.fn(), store: storeFor('FAILED_FINAL') });
+    const coordinator = new RecoveryCoordinator(service, { audit });
 
-    const coordinator = new RecoveryCoordinator(repos, adapter, 30_000, queue, {}, audit);
-    const outcomes = await coordinator.recoverExpired(1);
+    await expect(coordinator.recover({ request, state: 'FAILED_FINAL', correlation: { requestId: 'req-2', traceId: 'trace-2', tenantId: 'tenant-a', runId: 'run-2' } })).rejects.toThrow();
     const result = await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 100 });
 
-    expect(outcomes).toEqual([{ runId: 'run-recovery-2', recovered: false, action: 'FAILED' }]);
     expect(result.items).toHaveLength(1);
-    expect(result.items[0]).toMatchObject({ action: 'RECOVERY_FAILED', outcome: 'FAILED', resourceId: 'run-recovery-2' });
+    expect(result.items[0]).toMatchObject({ action: 'RECOVERY_FAILED_FINAL', resourceType: 'RUN', resourceId: 'run-2', outcome: 'FAILED', reasonClass: 'SYSTEM' });
   });
 });
