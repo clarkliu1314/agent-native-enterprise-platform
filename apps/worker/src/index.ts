@@ -2,6 +2,7 @@ import {
   DurableRuntimeService,
   DurableWorker,
   OperationalControlService,
+  PostgresAuditRepository,
   PostgresDatabase,
   PostgresOperationalControlRepository,
   PostgresToolRepositories,
@@ -32,7 +33,8 @@ function createWorkerComposition(
   options: WorkerCompositionOptions,
 ): WorkerComposition {
   const database = new PostgresDatabase();
-  const repositories = new PostgresToolRepositories(database);
+  const audit = new PostgresAuditRepository(database);
+  const repositories = new PostgresToolRepositories(database, audit);
   const runtime = new DurableRuntimeService(repositories, {
     adapter,
     leaseMs: options.leaseMs,
@@ -40,6 +42,7 @@ function createWorkerComposition(
   });
   const control = options.operationalControl ?? new OperationalControlService({
     repository: new PostgresOperationalControlRepository(database),
+    audit,
   });
   const worker = new DurableWorker(runtime, consumer, {
     owner: options.owner ?? `worker-${process.pid}`,

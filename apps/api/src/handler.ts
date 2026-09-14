@@ -2,6 +2,7 @@ import { DeploymentApplication } from '@agent-native/deployment-boundary';
 import type { AgentRuntime, StartRunInput } from '@agent-native/runtime-contract';
 import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { createDurableHandler } from './durable-handler';
+export { createAuditQueryHandler } from './audit-query-handler';
 export { createDurableHandler } from './durable-handler';
 export { createOperationalControlHandler } from './operational-control-handler';
 export { composeApi } from './composition';
@@ -22,14 +23,15 @@ export function createHandler(application: DeploymentApplication) {
 export function createVercelHandler(
   application: DeploymentApplication | RuntimeFacade,
   controlHandler?: (request: Request) => Promise<Response>,
+  auditQueryHandler?: (request: Request) => Promise<Response>,
 ) {
   const durableHandler = isRuntimeFacade(application)
     ? createDurableHandler(application)
     : createHandler(application);
   return async function handler(request: Request): Promise<Response> {
-    if (controlHandler && new URL(request.url).pathname.startsWith('/api/runs/')) {
-      return controlHandler(request);
-    }
+    const pathname = new URL(request.url).pathname;
+    if (auditQueryHandler && pathname === '/api/audit') return auditQueryHandler(request);
+    if (controlHandler && pathname.startsWith('/api/runs/')) return controlHandler(request);
     return durableHandler(request);
   };
 }

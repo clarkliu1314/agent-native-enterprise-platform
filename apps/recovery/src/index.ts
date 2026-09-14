@@ -1,4 +1,5 @@
 import {
+  PostgresAuditRepository,
   PostgresDatabase,
   PostgresRuntimeRepositories,
   RecoveryCoordinator,
@@ -19,8 +20,9 @@ export function composeRecovery(
   leaseMs = 30_000,
 ): RecoveryComposition {
   const database = new PostgresDatabase();
-  const repositories = new PostgresRuntimeRepositories(database);
-  const coordinator = new RecoveryCoordinator(repositories, adapter, leaseMs, queue);
+  const audit = new PostgresAuditRepository(database);
+  const repositories = new PostgresRuntimeRepositories(database, audit);
+  const coordinator = new RecoveryCoordinator(repositories, adapter, leaseMs, queue, {}, audit);
   return { database, repositories, queue, coordinator };
 }
 
@@ -31,8 +33,9 @@ export function composeRedisRecovery(
 ): RecoveryComposition<RedisStreamPublisher> {
   const queue = createRedisPublisher(redisUrl);
   const database = new PostgresDatabase();
-  const repositories = new PostgresRuntimeRepositories(database);
-  const coordinator = new RecoveryCoordinator(repositories, adapter, leaseMs, queue);
+  const audit = new PostgresAuditRepository(database);
+  const repositories = new PostgresRuntimeRepositories(database, audit);
+  const coordinator = new RecoveryCoordinator(repositories, adapter, leaseMs, queue, {}, audit);
   return { database, repositories, queue, coordinator };
 }
 

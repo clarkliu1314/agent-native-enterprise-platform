@@ -1,9 +1,9 @@
-import { InvestmentApplicationService, PostgresInvestmentUnitOfWork, type InvestmentDatabase } from '../../../packages/investment-domain/src/application-service';
+import { InvestmentApplicationService, PostgresInvestmentUnitOfWork } from '../../../packages/investment-domain/src/application-service';
 import type { AdvanceOpportunityStageCommand, ApproveInvestmentCommand, CreateOpportunityCommand, InvestmentDecisionCommand, RejectInvestmentCommand } from '../../../packages/investment-domain/src/commands';
 import { InvestmentWorkflow } from '../../../packages/investment-domain/src/workflow';
 import { PostgresInvestmentWorkflowRuntime, type InvestmentWorkflowDatabase } from '../../../packages/investment-domain/src/postgres-workflow-runtime';
 import type { InvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/runtime-port';
-import { PostgresDatabase } from '@agent-native/runtime';
+import { PostgresAuditRepository, PostgresDatabase } from '@agent-native/runtime';
 import type { InvestmentApiApplication } from './investment-handler';
 
 type WorkflowDatabase = InvestmentWorkflowDatabase;
@@ -15,12 +15,13 @@ export class InvestmentApiApplicationAdapter implements InvestmentApiApplication
 
   constructor(
     database: WorkflowDatabase = new PostgresDatabase(),
-    service: InvestmentApplicationService = new InvestmentApplicationService(new PostgresInvestmentUnitOfWork(database)),
-    workflowRuntime: InvestmentWorkflowRuntime = new PostgresInvestmentWorkflowRuntime(database),
+    service?: InvestmentApplicationService,
+    workflowRuntime?: InvestmentWorkflowRuntime,
   ) {
-    this.service = service;
-    this.workflowRuntime = workflowRuntime;
-    this.workflow = new InvestmentWorkflow(workflowRuntime);
+    const audit = new PostgresAuditRepository(database);
+    this.service = service ?? new InvestmentApplicationService(new PostgresInvestmentUnitOfWork(database, undefined, audit));
+    this.workflowRuntime = workflowRuntime ?? new PostgresInvestmentWorkflowRuntime(database, undefined, audit);
+    this.workflow = new InvestmentWorkflow(this.workflowRuntime);
   }
 
   createOpportunity(command: Record<string, unknown>): Promise<unknown> { return this.service.createOpportunity(command as unknown as CreateOpportunityCommand); }
@@ -32,7 +33,6 @@ export class InvestmentApiApplicationAdapter implements InvestmentApiApplication
     return Promise.reject(new Error(`Unsupported investment recommendation: ${String(decision.recommendation)}`));
   }
 
-  /** Admission only: no worker claim, long-running step, or caller fencing token crosses the API boundary. */
   startWorkflow(command: Record<string, unknown>): Promise<unknown> {
     return this.workflow.start({ tenantId: String(command.tenantId), opportunityId: String(command.opportunityId), idempotencyKey: String(command.idempotencyKey) });
   }
