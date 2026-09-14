@@ -46,8 +46,8 @@ describe('auditability hardening RED gate', () => {
 
     const result = await audit.query({
       tenantId: 'tenant-a',
-      from: '2026-09-15T00:00:00.000Z',
-      to: '2026-09-16T00:00:00.000Z',
+      from: '2020-01-01T00:00:00.000Z',
+      to: '2030-01-01T00:00:00.000Z',
       limit: 100,
     });
 
