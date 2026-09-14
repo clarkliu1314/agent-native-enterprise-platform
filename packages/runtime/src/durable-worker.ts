@@ -1,5 +1,5 @@
 import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
-import { classifyError, createStructuredLogEvent, safeEmit, type CorrelationContext, type ObservabilityLogger } from '@agent-native/observability';
+import { classifyError, createStructuredLogEvent, safeEmit, safeMetric, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
 import type { QueueConsumer } from './ports';
 
 export interface DurableWorkerOptions {
@@ -10,6 +10,7 @@ export interface DurableWorkerOptions {
     start(input: { runId: string; owner: string; fencingToken: bigint }): { stop(): void };
   };
   logger?: ObservabilityLogger;
+  metrics?: ObservabilityMetrics;
   correlation?: CorrelationContext;
 }
 
@@ -45,6 +46,7 @@ export class DurableWorker {
     if (this.options.logger && context) {
       safeEmit(this.options.logger, createStructuredLogEvent({ context, event: 'run.started', level: 'INFO', outcome: 'STARTED' }));
     }
+    safeMetric(() => this.options.metrics?.increment('agent_run_started_total', 1, { state: 'RUNNING' }));
     const deadlineAt = new Date(startedAt.getTime() + this.executionSliceMs);
     try {
       await this.runtime.executeRunBounded(runId, this.options.owner, deadlineAt);
@@ -52,12 +54,14 @@ export class DurableWorker {
         context, event: 'run.succeeded', level: 'INFO', outcome: 'SUCCEEDED',
         durationMs: Math.max(0, this.now().getTime() - startedAt.getTime()),
       }));
+      safeMetric(() => this.options.metrics?.increment('agent_run_completed_total', 1, { outcome: 'SUCCEEDED' }));
     } catch (error) {
       if (this.options.logger && context) safeEmit(this.options.logger, createStructuredLogEvent({
         context, event: 'run.failed', level: 'ERROR', outcome: 'FAILED',
         durationMs: Math.max(0, this.now().getTime() - startedAt.getTime()),
         errorCode: classifyError(error),
       }));
+      safeMetric(() => this.options.metrics?.increment('agent_run_failed_total', 1, { error_code: classifyError(error) }));
       throw error;
     }
   }
