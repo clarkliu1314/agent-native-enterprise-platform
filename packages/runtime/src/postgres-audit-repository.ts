@@ -1,4 +1,4 @@
-import type { AuditQuery, AuditQueryResult, AuditRecord, AuditRepository } from './auditability';
+import type { AuditQuery, AuditQueryResult, AuditRecord, AuditRepository, TransactionalAuditRepository } from './auditability';
 import { validateAuditRecord } from './auditability';
 import type { SqlClient, TransactionClient, TransactionRunner } from './ports';
 
@@ -7,14 +7,18 @@ const MAX_WINDOW_MS = 31 * 24 * 60 * 60 * 1000;
 
 type Db = SqlClient & TransactionRunner;
 
-export class PostgresAuditRepository implements AuditRepository {
+export class PostgresAuditRepository implements TransactionalAuditRepository {
   constructor(private readonly db: Db) {}
 
   async append(record: AuditRecord): Promise<void> {
-    validateAuditRecord(record);
     await this.db.transaction(async (tx) => {
-      await insertAuditRecord(tx, record);
+      await this.appendInTransaction(tx, record);
     });
+  }
+
+  async appendInTransaction(tx: TransactionClient, record: AuditRecord): Promise<void> {
+    insertAuditRecordValidation(record);
+    await insertAuditRecord(tx, record);
   }
 
   async query(query: AuditQuery): Promise<AuditQueryResult> {
@@ -84,6 +88,10 @@ export async function insertAuditRecord(tx: TransactionClient, record: AuditReco
     ],
   );
   if (result.rowCount !== 1) throw new Error('AUDIT_INSERT_FAILED');
+}
+
+function insertAuditRecordValidation(record: AuditRecord): void {
+  validateAuditRecord(record);
 }
 
 interface AuditRow {
