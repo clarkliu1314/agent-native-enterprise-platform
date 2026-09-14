@@ -1,9 +1,8 @@
 import type { CheckpointEnvelope, CreateRunCommand, RunView, RuntimeEventView } from '@agent-native/runtime-contract/durable';
-import type { TransactionRunner, SqlClient } from './ports';
+import type { TransactionRunner, SqlClient, TransactionClient } from './ports';
 import type { DurableRepositories, IdempotencyRecord, RunClaim } from './repositories';
 import type { TransactionalAuditRepository } from './auditability';
 import { buildRunLifecycleAuditRecord } from './auditability';
-import { insertAuditRecord } from './postgres-audit-repository';
 
 const asBigInt = (value: unknown): bigint => typeof value === 'bigint' ? value : BigInt(String(value));
 const asOptionalIso = (value: unknown): string | undefined => value == null ? undefined : new Date(String(value)).toISOString();
@@ -22,9 +21,8 @@ function outboxPayload(event: RuntimeEventView): unknown {
 export class PostgresRuntimeRepositories implements DurableRepositories {
   constructor(protected readonly db: TransactionRunner & SqlClient, private readonly audit?: TransactionalAuditRepository) {}
 
-  private appendAuditInTransaction(tx: import('./ports').TransactionClient, record: Parameters<TransactionalAuditRepository['appendInTransaction']>[1]): Promise<void> {
-    if (this.audit) return this.audit.appendInTransaction(tx, record);
-    return insertAuditRecordIfConfigured(tx, record, this.audit);
+  private async appendAuditInTransaction(tx: TransactionClient, record: Parameters<TransactionalAuditRepository['appendInTransaction']>[1]): Promise<void> {
+    if (this.audit) await this.audit.appendInTransaction(tx, record);
   }
 
   async admitRun(input: { command: CreateRunCommand; commandHash: string; runId: string; eventId: string }): Promise<RunView> {
@@ -78,9 +76,4 @@ export class PostgresRuntimeRepositories implements DurableRepositories {
   async findExpiredRuns(limit: number): Promise<RunView[]> { const result = await this.db.query<Record<string,unknown>>(`SELECT * FROM agent_runs WHERE state='RUNNING' AND lease_expires_at<now() ORDER BY lease_expires_at ASC LIMIT $1`,[limit]); return result.rows.map(toRunView); }
   async reclaimExpiredRun(runId: string, owner: string, leaseMs: number): Promise<RunClaim | null> { const result = await this.db.query<Record<string,unknown>>(`UPDATE agent_runs SET lease_owner=$2,lease_expires_at=now()+($3*interval '1 millisecond'),fencing_token=fencing_token+1,attempt=attempt+1,heartbeat_at=now() WHERE run_id=$1 AND state='RUNNING' AND lease_expires_at<now() RETURNING *`,[runId,owner,leaseMs]); if(!result.rows[0])return null; const run=toRunView(result.rows[0]); return {run,fencingToken:run.fencingToken}; }
   async saveIdempotencyResponse(key:string,response:unknown):Promise<void>{await this.db.query('UPDATE idempotency_keys SET response=$2::jsonb WHERE idempotency_key=$1',[key,json(response)]);}
-}
-
-async function insertAuditRecordIfConfigured(tx: import('./ports').TransactionClient, record: Parameters<TransactionalAuditRepository['appendInTransaction']>[1], audit?: TransactionalAuditRepository): Promise<void> {
-  if (audit) return audit.appendInTransaction(tx, record);
-  throw new Error('AUDIT_REPOSITORY_REQUIRED');
 }
