@@ -17,5 +17,17 @@ export function createHandler(application: DeploymentApplication) {
   };
 }
 
-export function createVercelHandler(application: DeploymentApplication) { return createHandler(application); }
+export function createVercelHandler(
+  application: DeploymentApplication,
+  controlHandler?: (request: Request) => Promise<Response>,
+) {
+  const durableHandler = createHandler(application);
+  return async function handler(request: Request): Promise<Response> {
+    if (controlHandler && new URL(request.url).pathname.startsWith('/api/runs/')) {
+      return controlHandler(request);
+    }
+    return durableHandler(request);
+  };
+}
+
 export type RequestRuntimeFactory = () => AgentRuntime;
