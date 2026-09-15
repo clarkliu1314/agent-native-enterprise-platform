@@ -6,6 +6,7 @@ import { OperationalControlError, type OperationalControlService } from './opera
 export interface DurableWorkerOptions {
   owner: string;
   executionSliceMs?: number;
+  maxConcurrency?: number;
   now?: () => Date;
   heartbeat?: {
     start(input: { runId: string; owner: string; fencingToken: bigint }): { stop(): void };
@@ -20,7 +21,10 @@ export interface DurableRunMessage { runId: string; correlation?: CorrelationCon
 
 export class DurableWorker {
   private readonly executionSliceMs: number;
+  private readonly maxConcurrency: number;
   private readonly now: () => Date;
+  private activeCount = 0;
+  private readonly waiters: Array<() => void> = [];
 
   constructor(
     private readonly runtime: RuntimeFacade,
@@ -28,6 +32,10 @@ export class DurableWorker {
     private readonly options: DurableWorkerOptions,
   ) {
     this.executionSliceMs = options.executionSliceMs ?? 20_000;
+    this.maxConcurrency = options.maxConcurrency ?? 8;
+    if (!Number.isInteger(this.maxConcurrency) || this.maxConcurrency < 1) {
+      throw new RangeError('maxConcurrency must be a positive integer');
+    }
     this.now = options.now ?? (() => new Date());
   }
 
@@ -35,7 +43,12 @@ export class DurableWorker {
     await this.consumer.consume(async (message) => {
       const payload = message.payload as Partial<DurableRunMessage>;
       if (message.topic !== 'agent.run' || typeof payload.runId !== 'string' || payload.runId.length === 0) return;
-      await this.process(payload.runId, payload.correlation);
+      const release = await this.acquireSlot();
+      try {
+        await this.process(payload.runId, payload.correlation);
+      } finally {
+        release();
+      }
     });
   }
 
@@ -68,6 +81,22 @@ export class DurableWorker {
       safeMetric(() => this.options.metrics?.increment('agent_run_failed_total', 1, { error_code: classifyError(error) }));
       throw error;
     }
+  }
+
+  private async acquireSlot(): Promise<() => void> {
+    if (this.activeCount < this.maxConcurrency) {
+      this.activeCount += 1;
+      return () => this.releaseSlot();
+    }
+    await new Promise<void>((resolve) => this.waiters.push(resolve));
+    this.activeCount += 1;
+    return () => this.releaseSlot();
+  }
+
+  private releaseSlot(): void {
+    this.activeCount -= 1;
+    const next = this.waiters.shift();
+    if (next) next();
   }
 
   private async authorizeOperationalContinuation(runId: string): Promise<boolean> {
