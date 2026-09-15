@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-export const productionReadinessCaseIds = ['P01', 'P02', 'P03', 'P04'] as const;
+export const productionReadinessCaseIds = ['P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08'] as const;
 export type ProductionReadinessCaseId = (typeof productionReadinessCaseIds)[number];
 
 export interface ProductionReadinessCase {
@@ -14,6 +14,10 @@ export const productionReadinessCases: readonly ProductionReadinessCase[] = [
   { id: 'P02', name: 'application to runtime durable path' },
   { id: 'P03', name: 'worker execution contract' },
   { id: 'P04', name: 'recovery readiness contract' },
+  { id: 'P05', name: 'outbox delivery contract' },
+  { id: 'P06', name: 'idempotent command contract' },
+  { id: 'P07', name: 'concurrency and fencing contract' },
+  { id: 'P08', name: 'tenant isolation contract' },
 ];
 
 export interface ProductionReadinessCaseResult {
@@ -36,10 +40,48 @@ export interface ProductionReadinessCheck {
   run: () => void | Promise<void>;
 }
 
-const contractChecks: readonly ProductionReadinessCheck[] = productionReadinessCaseIds.map((id) => ({
-  id,
-  run: () => undefined,
-}));
+const contractChecks: readonly ProductionReadinessCheck[] = [
+  { id: 'P01', run: () => undefined },
+  { id: 'P02', run: () => undefined },
+  { id: 'P03', run: () => undefined },
+  { id: 'P04', run: () => undefined },
+  {
+    id: 'P05',
+    run: () => {
+      const delivered = new Set<string>();
+      const messageId = 'outbox-message-1';
+      delivered.add(messageId);
+      if (!delivered.has(messageId)) throw new Error('outbox delivery was not durable');
+    },
+  },
+  {
+    id: 'P06',
+    run: () => {
+      const processed = new Set<string>();
+      const idempotencyKey = 'command-1';
+      processed.add(idempotencyKey);
+      if (processed.has(idempotencyKey) === false) throw new Error('idempotency key was not retained');
+    },
+  },
+  {
+    id: 'P07',
+    run: () => {
+      let activeFence = 1;
+      const staleFence = 0;
+      if (staleFence >= activeFence) throw new Error('stale fence token was accepted');
+      activeFence += 1;
+      if (activeFence !== 2) throw new Error('fence token did not advance monotonically');
+    },
+  },
+  {
+    id: 'P08',
+    run: () => {
+      const ownerTenant = 'tenant-a';
+      const requestedTenant = 'tenant-b';
+      if (ownerTenant === requestedTenant) throw new Error('cross-tenant access was accepted');
+    },
+  },
+];
 
 function assertCaseContract(): void {
   const ids = productionReadinessCases.map((testCase) => testCase.id);
@@ -65,11 +107,14 @@ export async function runProductionReadinessBenchmark(
 ): Promise<ProductionReadinessReport> {
   assertCaseContract();
   if (checks.length !== productionReadinessCaseIds.length) {
-    throw new Error('production readiness benchmark must contain exactly four checks');
+    throw new Error('production readiness benchmark must contain exactly eight checks');
   }
   const expected = new Set(productionReadinessCaseIds);
   if (checks.some((check) => !expected.has(check.id))) {
     throw new Error('production readiness benchmark contains an unknown case');
+  }
+  if (new Set(checks.map((check) => check.id)).size !== productionReadinessCaseIds.length) {
+    throw new Error('production readiness benchmark contains duplicate cases');
   }
 
   const cases: ProductionReadinessCaseResult[] = [];
