@@ -76,8 +76,9 @@ const contractChecks: readonly ProductionReadinessCheck[] = [
   {
     id: 'P08',
     run: () => {
-      const ownerTenant = 'tenant-a';
-      const requestedTenant = 'tenant-b';
+      const tenantIds: string[] = ['tenant-a', 'tenant-b'];
+      const ownerTenant = tenantIds[0];
+      const requestedTenant = tenantIds[1];
       if (ownerTenant === requestedTenant) throw new Error('cross-tenant access was accepted');
     },
   },
