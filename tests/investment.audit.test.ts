@@ -25,7 +25,8 @@ describe('investment auditability', () => {
     const uow = new PostgresInvestmentUnitOfWork(database, undefined, audit);
     const service = new InvestmentApplicationService(uow);
     const result = await service.approve({ tenantId: 'tenant-a', opportunityId: 'opp-1', decisionCycle: 1, recommendation: 'APPROVE', rationale: 'approved', actorId: 'user-1', idempotencyKey: 'investment-decision:opp-1:1' });
-    const audits = await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 100 });
+    const now = Date.now();
+    const audits = await audit.query({ tenantId: 'tenant-a', from: new Date(now - 60_000).toISOString(), to: new Date(now + 60_000).toISOString(), limit: 100 });
 
     expect(result.decisionId).toBe('decision-1');
     expect(audits.items).toHaveLength(1);
