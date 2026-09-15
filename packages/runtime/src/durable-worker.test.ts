@@ -55,7 +55,7 @@ describe('DurableWorker', () => {
 
     await worker.start();
     const first = handler?.({ topic: 'agent.run', payload: { runId: 'run-1' } });
-    await Promise.resolve();
+    await vi.waitFor(() => expect(executeRunBounded).toHaveBeenCalledTimes(1));
     const second = handler?.({ topic: 'agent.run', payload: { runId: 'run-2' } });
     await Promise.resolve();
 
