@@ -95,7 +95,7 @@ describeIfDatabase('PostgresRuntimeRepositories', () => {
       });
 
       const before = await db.query<{ version: string; metadata: Record<string, unknown> }>(
-        'SELECT version, metadata FROM agent_runs WHERE run_id=$1',
+        'SELECT version::text AS version, metadata FROM agent_runs WHERE run_id=$1',
         [runId],
       );
       expect(before.rows[0]).toMatchObject({ version: '1', metadata: { committed: true } });
@@ -108,7 +108,7 @@ describeIfDatabase('PostgresRuntimeRepositories', () => {
       })).rejects.toThrow();
 
       const after = await db.query<{ version: string; metadata: Record<string, unknown> }>(
-        'SELECT version, metadata FROM agent_runs WHERE run_id=$1',
+        'SELECT version::text AS version, metadata FROM agent_runs WHERE run_id=$1',
         [runId],
       );
       expect(after.rows[0]).toMatchObject({ version: '1', metadata: { committed: true } });
