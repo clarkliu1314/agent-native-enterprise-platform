@@ -1,6 +1,6 @@
 # Stage 12.4 Failure & SLO Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status: CLOSED / COMPLETE (2026-09-15).** This document remains the historical task-by-task implementation record; the closeout record is authoritative for final evidence.
 
 **Goal:** Implement measurable failure semantics, SLO/error-budget controls, and deterministic failure-injection coverage for the durable Agent-native runtime without changing the authoritative runtime model.
 
@@ -10,18 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-15-stage12-4-failure-slo.md`
 
-**Current status (2026-09-15):** Design/approval gate accepted. Tasks 1–6 are implemented and the exact branch-head CI Run #815 passed on commit `963a72fddb5bee35792052806fbd4436f7a3f555`. Task 7 final verification, PR readiness, merge, mainline verification, and closeout documentation remain.
+**Final status (2026-09-15):** Tasks 1–7 completed. Feature branch `feat/stage12-4-failure-policy-test2` passed exact branch-head CI Run #817 on `b360d5fe808466921f1bcd5754d88d3b2d9e9bcc`. PR #31 merged to `main` as `19e108a719ced4f6cb026879675102f3c8826e88`. Authoritative mainline CI Run #818 passed on the exact merge SHA. Stage 12.4 is closed; transition to Stage 12.5 Security Hardening is now permitted.
 
 ## File map
 
-Expected implementation touch points, to be confirmed against current code before editing:
-
 - `packages/runtime/src/*` — failure classification, timeout/retry/backpressure policy, durable recovery semantics, and SLO-facing measurements.
-- `apps/api/src/*` — API handoff/timeout boundary only where required by the existing stateless composition root.
+- `apps/api/src/*` — API handoff/timeout boundary where required by the existing stateless composition root.
 - `tests/*failure*.test.ts`, `tests/*slo*.test.ts`, `tests/*recovery*.test.ts` — failure injection, SLO contract, crash/recovery, and regression coverage.
-- `docs/superpowers/specs/2026-09-15-stage12-4-failure-slo.md` — authoritative design.
-- `docs/superpowers/plans/2026-09-15-stage12-4-failure-slo.md` — implementation tracking.
-- Existing Stage 12.1/12.2/12.3 files — reuse interfaces and verify no duplicate telemetry/control/audit model is introduced.
+- `docs/superpowers/specs/2026-09-15-stage12-4-failure-slo.md` — authoritative design/specification.
+- `docs/superpowers/plans/2026-09-15-stage12-4-failure-slo.md` — this historical implementation plan.
 
 Do not create a second runtime, scheduler, event dispatcher, authoritative Redis state, or parallel audit store.
 
@@ -95,22 +92,32 @@ Do not create a second runtime, scheduler, event dispatcher, authoritative Redis
 - The new gate validates durable lifecycle, checkpoint/recovery identity, replay invariants, and absence of invariant violations across the unified adapter surface.
 - The original 16-case × 4-adapter = 64-case hard gate remains unchanged.
 - Infrastructure-specific PostgreSQL/Redis failure semantics remain covered by the runtime failure-injection suite; the cross-adapter benchmark intentionally validates framework-neutral durable invariants rather than duplicating infrastructure fault machinery.
-- CI Run #815 passed on exact branch HEAD `963a72fddb5bee35792052806fbd4436f7a3f555`, including the 64-case benchmark, Failure/SLO benchmark gate, full tests, and Compose smoke.
+- CI Run #817 passed on exact feature-branch HEAD `b360d5fe808466921f1bcd5754d88d3b2d9e9bcc`, including typecheck, API build, 64-case benchmark, Failure/SLO benchmark gate, full tests, and Compose smoke.
 
 ## Task 7 — Full verification and documentation
 
-- [ ] Run typecheck.
-- [ ] Run API build.
-- [ ] Run full test suite.
-- [ ] Run existing 64-case benchmark.
-- [ ] Run Stage 12.4 failure/SLO tests.
-- [ ] Run crash/recovery/fencing regression tests.
-- [ ] Run Compose smoke.
-- [ ] Review metric cardinality and sensitive-data assertions.
-- [ ] Update master plan only after implementation evidence is available.
-- [ ] Keep implementation PR Draft until exact branch-head CI is GREEN.
-- [ ] Merge only with expected branch HEAD and then verify mainline CI against exact merge SHA.
-- [ ] Create a separate Stage 12.4 closeout documentation change recording branch, PR, merge SHA, and authoritative mainline run.
+- [x] Run typecheck.
+- [x] Run API build.
+- [x] Run full test suite.
+- [x] Run existing 64-case benchmark.
+- [x] Run Stage 12.4 failure/SLO tests.
+- [x] Run crash/recovery/fencing regression tests.
+- [x] Run Compose smoke.
+- [x] Review metric cardinality and sensitive-data assertions.
+- [x] Update master plan after implementation evidence was available.
+- [x] Keep implementation PR Draft until exact branch-head CI is GREEN.
+- [x] Merge only with expected branch HEAD and verify mainline CI against exact merge SHA.
+- [x] Create a separate Stage 12.4 closeout documentation change recording branch, PR, merge SHA, and authoritative mainline run.
+
+### Task 7 evidence recorded
+
+- Implementation branch: `feat/stage12-4-failure-policy-test2`.
+- Final feature-branch HEAD: `b360d5fe808466921f1bcd5754d88d3b2d9e9bcc`.
+- Final feature-branch CI: **Run #817 — GREEN**.
+- PR #31: merged after exact branch-head verification.
+- Merge SHA: `19e108a719ced4f6cb026879675102f3c8826e88`.
+- Authoritative mainline CI: **Run #818 — GREEN** on the exact merge SHA.
+- Documentation closeout is maintained separately on `docs/stage12-4-closeout`.
 
 ## Engineering constraints
 
