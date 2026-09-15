@@ -59,7 +59,7 @@ const PERMISSION: Record<Exclude<RetentionCategory, 'CORRECTNESS'>, string> = {
 
 export class RetentionPolicyError extends Error {
   constructor(public readonly code: string, message: string) {
-    super(message);
+    super(`${code}: ${message}`);
     this.name = 'RetentionPolicyError';
   }
 }
