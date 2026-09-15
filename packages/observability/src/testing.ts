@@ -3,7 +3,7 @@ import type { SafeScalar } from './sanitizer.js';
 export type MetricLabels = Record<string, string>;
 
 const UNBOUNDED_LABELS = new Set(['runId', 'traceId', 'requestId', 'workflowId', 'actorId']);
-const BOUNDED_LABELS = new Set(['tenant', 'agent', 'state', 'tool', 'outcome', 'error_code']);
+const BOUNDED_LABELS = new Set(['tenant', 'agent', 'state', 'tool', 'outcome', 'error_code', 'slo']);
 const CANONICAL_METRIC_NAMES = new Set([
   'agent_run_started_total',
   'agent_run_completed_total',
@@ -17,6 +17,9 @@ const CANONICAL_METRIC_NAMES = new Set([
   'agent_outbox_publish_failed_total',
   'agent_outbox_lag_ms',
   'agent_run_waiting_ms',
+  'agent_slo_compliance_ratio',
+  'agent_error_budget_remaining_ratio',
+  'agent_slo_burn_rate',
 ]);
 
 export function assertBoundedMetricLabels(labels: MetricLabels): void {
