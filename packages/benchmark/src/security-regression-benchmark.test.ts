@@ -58,9 +58,23 @@ describe('stage 12.5 security regression benchmark', () => {
       let delegated = false;
       const secured = createSecuredToolPermission({
         context: context(['tool:invoke']),
-        delegate: { async authorize() { delegated = true; } },
+        delegate: {
+          async authorize(input) {
+            expect(input.runId).toBe('run-s09');
+            expect(input.agentId).toBe('agent-s09');
+            expect(input.toolName).toBe('safe-tool');
+            expect(input.input).toEqual({ value: 'safe' });
+            delegated = true;
+            return true;
+          },
+        },
       });
-      await secured.authorize({ name: 'safe-tool' });
+      await expect(secured.authorize({
+        runId: 'run-s09',
+        agentId: 'agent-s09',
+        toolName: 'safe-tool',
+        input: { value: 'safe' },
+      })).resolves.toBe(true);
       expect(delegated).toBe(true);
     }));
     results.push(await runCase('S10', () => {
