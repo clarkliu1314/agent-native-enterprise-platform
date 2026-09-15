@@ -27,9 +27,7 @@ describe('durable worker concurrency contract', () => {
 
     const worker = new DurableWorker(runtime, consumer, { owner: 'worker-1', maxConcurrency: 2 });
     const started = worker.start();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(peak).toBe(2);
+    await vi.waitFor(() => expect(peak).toBe(2));
     release();
     await started;
     expect(process).toHaveBeenCalledTimes(3);
