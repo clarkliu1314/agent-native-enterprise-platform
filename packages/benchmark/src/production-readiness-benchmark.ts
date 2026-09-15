@@ -1,13 +1,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { authorizeComponent, createSecurityContext, validateAuditRecord } from '@agent-native/runtime';
+import { createStructuredLogEvent } from '@agent-native/observability';
 
-export const productionReadinessCaseIds = ['P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08'] as const;
+export const productionReadinessCaseIds = ['P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08', 'P09', 'P10', 'P11'] as const;
 export type ProductionReadinessCaseId = (typeof productionReadinessCaseIds)[number];
 
-export interface ProductionReadinessCase {
-  id: ProductionReadinessCaseId;
-  name: string;
-}
+export interface ProductionReadinessCase { id: ProductionReadinessCaseId; name: string; }
 
 export const productionReadinessCases: readonly ProductionReadinessCase[] = [
   { id: 'P01', name: 'startup and health contract' },
@@ -18,27 +17,18 @@ export const productionReadinessCases: readonly ProductionReadinessCase[] = [
   { id: 'P06', name: 'idempotent command contract' },
   { id: 'P07', name: 'concurrency and fencing contract' },
   { id: 'P08', name: 'tenant isolation contract' },
+  { id: 'P09', name: 'tool permission and least privilege contract' },
+  { id: 'P10', name: 'auditability contract' },
+  { id: 'P11', name: 'observability sanitization contract' },
 ];
 
-export interface ProductionReadinessCaseResult {
-  id: ProductionReadinessCaseId;
-  passed: boolean;
-}
-
+export interface ProductionReadinessCaseResult { id: ProductionReadinessCaseId; passed: boolean; }
 export interface ProductionReadinessReport {
   schemaVersion: 1;
   cases: ProductionReadinessCaseResult[];
-  summary: {
-    total: number;
-    passed: number;
-    failed: number;
-  };
+  summary: { total: number; passed: number; failed: number; };
 }
-
-export interface ProductionReadinessCheck {
-  id: ProductionReadinessCaseId;
-  run: () => void | Promise<void>;
-}
+export interface ProductionReadinessCheck { id: ProductionReadinessCaseId; run: () => void | Promise<void>; }
 
 const contractChecks: readonly ProductionReadinessCheck[] = [
   { id: 'P01', run: () => undefined },
@@ -60,7 +50,7 @@ const contractChecks: readonly ProductionReadinessCheck[] = [
       const processed = new Set<string>();
       const idempotencyKey = 'command-1';
       processed.add(idempotencyKey);
-      if (processed.has(idempotencyKey) === false) throw new Error('idempotency key was not retained');
+      if (!processed.has(idempotencyKey)) throw new Error('idempotency key was not retained');
     },
   },
   {
@@ -82,6 +72,50 @@ const contractChecks: readonly ProductionReadinessCheck[] = [
       if (ownerTenant === requestedTenant) throw new Error('cross-tenant access was accepted');
     },
   },
+  {
+    id: 'P09',
+    run: () => {
+      const context = createSecurityContext({ tenantId: 'tenant-a', actorId: 'actor-1', permissions: ['tool:invoke'] });
+      authorizeComponent(context, 'tool');
+      try {
+        authorizeComponent(context, 'worker');
+        throw new Error('least privilege accepted an undeclared permission');
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes('permission denied')) throw error;
+      }
+    },
+  },
+  {
+    id: 'P10',
+    run: () => {
+      const record = {
+        auditId: 'audit:run-1:RUN_COMPLETED:1', tenantId: 'tenant-a', occurredAt: new Date().toISOString(),
+        actorId: 'system', actorType: 'SYSTEM' as const, action: 'RUN_COMPLETED', resourceType: 'RUN', resourceId: 'run-1',
+        outcome: 'SUCCEEDED' as const, reasonClass: 'NONE' as const,
+        correlation: { requestId: 'req-1', traceId: 'trace-1', runId: 'run-1' }, version: 1,
+        metadata: { resultingState: 'SUCCEEDED' },
+      };
+      validateAuditRecord(record);
+      try {
+        validateAuditRecord({ ...record, metadata: { password: 'redacted' } });
+        throw new Error('audit accepted sensitive metadata');
+      } catch (error) {
+        if (!(error instanceof Error) || error.message !== 'SENSITIVE_AUDIT_DATA') throw error;
+      }
+    },
+  },
+  {
+    id: 'P11',
+    run: () => {
+      const event = createStructuredLogEvent({
+        context: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-a' },
+        event: 'tool.succeeded', level: 'INFO', attributes: { operation: 'lookup', password: 'secret-value', nested: { token: 'secret' } },
+      });
+      const serialized = JSON.stringify(event);
+      if (/secret-value|password|token/i.test(serialized)) throw new Error('observability event contains sensitive data');
+      if (!serialized.includes('operation')) throw new Error('observability event lost safe attributes');
+    },
+  },
 ];
 
 function assertCaseContract(): void {
@@ -89,55 +123,31 @@ function assertCaseContract(): void {
   if (ids.length !== productionReadinessCaseIds.length || ids.some((id, index) => id !== productionReadinessCaseIds[index])) {
     throw new Error('production readiness case order is not deterministic');
   }
-  if (productionReadinessCases.some((testCase) => testCase.name.trim().length === 0)) {
-    throw new Error('production readiness case name is blank');
-  }
+  if (productionReadinessCases.some((testCase) => testCase.name.trim().length === 0)) throw new Error('production readiness case name is blank');
 }
 
 async function runCheck(check: ProductionReadinessCheck): Promise<ProductionReadinessCaseResult> {
-  try {
-    await check.run();
-    return { id: check.id, passed: true };
-  } catch {
-    return { id: check.id, passed: false };
-  }
+  try { await check.run(); return { id: check.id, passed: true }; } catch { return { id: check.id, passed: false }; }
 }
 
-export async function runProductionReadinessBenchmark(
-  checks: readonly ProductionReadinessCheck[] = contractChecks,
-): Promise<ProductionReadinessReport> {
+export async function runProductionReadinessBenchmark(checks: readonly ProductionReadinessCheck[] = contractChecks): Promise<ProductionReadinessReport> {
   assertCaseContract();
-  if (checks.length !== productionReadinessCaseIds.length) {
-    throw new Error('production readiness benchmark must contain exactly eight checks');
-  }
+  if (checks.length !== productionReadinessCaseIds.length) throw new Error('production readiness benchmark must contain exactly eleven checks');
   const expected = new Set(productionReadinessCaseIds);
-  if (checks.some((check) => !expected.has(check.id))) {
-    throw new Error('production readiness benchmark contains an unknown case');
-  }
-  if (new Set(checks.map((check) => check.id)).size !== productionReadinessCaseIds.length) {
-    throw new Error('production readiness benchmark contains duplicate cases');
-  }
+  if (checks.some((check) => !expected.has(check.id))) throw new Error('production readiness benchmark contains an unknown case');
+  if (new Set(checks.map((check) => check.id)).size !== productionReadinessCaseIds.length) throw new Error('production readiness benchmark contains duplicate cases');
 
   const cases: ProductionReadinessCaseResult[] = [];
   for (const id of productionReadinessCaseIds) {
     const check = checks.find((candidate) => candidate.id === id);
-    if (!check) {
-      cases.push({ id, passed: false });
-      continue;
-    }
-    cases.push(await runCheck(check));
+    cases.push(check ? await runCheck(check) : { id, passed: false });
   }
 
   const report: ProductionReadinessReport = {
     schemaVersion: 1,
     cases,
-    summary: {
-      total: cases.length,
-      passed: cases.filter((result) => result.passed).length,
-      failed: cases.filter((result) => !result.passed).length,
-    },
+    summary: { total: cases.length, passed: cases.filter((result) => result.passed).length, failed: cases.filter((result) => !result.passed).length },
   };
-
   const artifactPath = resolve(process.cwd(), 'artifacts', 'production-readiness-results.json');
   mkdirSync(dirname(artifactPath), { recursive: true });
   writeFileSync(artifactPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
