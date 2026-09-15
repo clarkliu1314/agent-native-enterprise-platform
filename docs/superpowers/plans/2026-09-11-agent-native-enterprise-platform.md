@@ -1,6 +1,6 @@
 # Agent-native Enterprise Platform Implementation Plan
 
-> **Current phase:** Stage 12 — Production Readiness & Operability; Stage 12.5 Security Hardening.
+> **Current phase:** Stage 12 — Production Readiness & Operability; Stage 12.6 Production Readiness Benchmark.
 
 The approved architecture baseline **A** remains locked. PostgreSQL is the durable source of truth; Redis is delivery/scheduling only; RuntimeFacade is the framework-neutral application boundary; API, Worker, Recovery, and Outbox Publisher are separate composition roots; the Run FSM is exactly `QUEUED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
 
@@ -86,23 +86,35 @@ Authoritative specification/plan:
 - `docs/superpowers/plans/2026-09-15-stage12-4-failure-slo.md`
 - `docs/superpowers/plans/2026-09-15-stage12-4-closeout.md`
 
-Scope completed: failure taxonomy and retryability, explicit timeout semantics, bounded backpressure/concurrency, SLI/SLO/error-budget measurements, deterministic failure-injection and crash/recovery/fencing coverage, failure/SLO benchmark integration, and exact acceptance gates. The existing 64-case benchmark remains unchanged; the additional Failure/SLO gate covers 4 scenarios × 4 adapters = 16 cases. No second runtime, scheduler, authoritative Redis state, or parallel audit store was introduced.
+Authoritative evidence: PR #31 merged; merge commit `19e108a719ced4f6cb026879675102f3c8826e88`; **Run #818 — GREEN** on the exact merge SHA.
+
+### Stage 12.5 — Security Hardening
+
+**Status: CLOSED / COMPLETE.**
+
+Authoritative specification/plan:
+
+- `docs/superpowers/specs/2026-09-15-stage12-5-security-hardening.md`
+- `docs/superpowers/plans/2026-09-15-stage12-5-security-hardening.md`
+- `docs/superpowers/plans/2026-09-15-stage12-5-closeout.md`
+
+Scope completed: immutable fail-closed security context, durable tenant isolation, least-privilege component authorization and Tool Permission verification, secret-safe error/audit/telemetry/durable-data boundaries, authorized tenant-scoped retention/purge, and deterministic Security Regression S01–S16 CI hard gate. The existing 64-case adapter benchmark remains unchanged in semantics.
 
 Authoritative evidence:
 
-- Implementation branch: `feat/stage12-4-failure-policy-test2`.
-- Final feature-branch HEAD: `b360d5fe808466921f1bcd5754d88d3b2d9e9bcc`.
-- **Run #817 — GREEN** on the exact feature-branch HEAD.
-- PR #31 merged.
-- Merge commit: `19e108a719ced4f6cb026879675102f3c8826e88`.
-- **Run #818 — GREEN** on the exact mainline merge SHA.
+- Implementation branch: `feat/stage12-5-security-hardening-task6`.
+- Final implementation HEAD: `6b321a16ec8e7a839067ba3d24aa940fb137a018`.
+- PR #38 merged.
+- Merge commit: `3442f2bfb63071f534939e58651ebd238b11bab2`.
+- **Run #840 — GREEN** on the exact implementation HEAD.
+- **Run #841 — GREEN** on the exact mainline merge SHA.
 
-Run #818 is the authoritative completion evidence for Stage 12.4.
+Run #841 is the authoritative implementation completion evidence for Stage 12.5.
 
 ### Stage 12 roadmap
 
-- **12.5 Security Hardening:** secret handling, tenant-isolation verification, least privilege, retention, and security regression gates.
-- **12.6 Production Readiness Benchmark:** production-operability benchmark matrix covering observability, control, audit, SLO, and security invariants.
+- **12.5 Security Hardening:** CLOSED / COMPLETE.
+- **12.6 Production Readiness Benchmark:** NEXT — production-operability benchmark matrix covering observability, control, audit, SLO/failure, and security invariants.
 - **12.7 Final Mainline Verification:** complete Stage 12 only after all gates pass on mainline.
 
 ## Branch and merge discipline
