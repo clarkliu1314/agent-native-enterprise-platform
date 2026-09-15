@@ -15,6 +15,7 @@
     "@agent-native/adapter-mastra": "workspace:*",
     "@agent-native/durability": "workspace:*",
     "@agent-native/outbox": "workspace:*",
+    "@agent-native/observability": "workspace:*",
     "@agent-native/runtime": "workspace:*",
     "@agent-native/runtime-contract": "workspace:*",
     "@agent-native/tool-runtime": "workspace:*",
