@@ -19,6 +19,7 @@ export { TenantIsolationError, assertCommandTenant, assertRunTenant, assertTenan
 export { authorizeComponent, createSecuredToolPermission } from './least-privilege';
 export { sanitizeSecurityData, type SecuritySafeScalar } from './security-data';
 export { sanitizeSecurityError } from './security-errors';
+export { InMemoryRetentionRepository, RetentionPurgeService, RetentionPolicyError, type RetentionCategory, type RetentionEvidence, type RetentionPolicy, type RetentionRecord, type RetentionRepository, type PurgeRequest, type PurgeResult } from './retention-policy';
 export type * from './security-context';
 export type * from './auditability';
 export type * from './operational-control';
