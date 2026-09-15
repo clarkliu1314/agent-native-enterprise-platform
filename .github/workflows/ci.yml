@@ -90,6 +90,31 @@ jobs:
           if-no-files-found: error
       - name: Failure and SLO benchmark gate
         run: pnpm exec vitest run packages/benchmark/src/failure-slo-benchmark.test.ts
+      - name: Security regression benchmark gate
+        id: security_regression
+        run: |
+          rm -f artifacts/security-regression-results.json
+          pnpm exec vitest run packages/benchmark/src/security-regression-benchmark.test.ts
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const report = JSON.parse(readFileSync('artifacts/security-regression-results.json', 'utf8'));
+          if (report.schemaVersion !== 1) throw new Error(`Unexpected security benchmark schemaVersion: ${report.schemaVersion}`);
+          if (report.summary.total !== 16 || report.summary.passed !== 16 || report.summary.failed !== 0) {
+            throw new Error(`Security regression gate failed: ${JSON.stringify(report.summary)}`);
+          }
+          const expected = Array.from({ length: 16 }, (_, index) => `S${String(index + 1).padStart(2, '0')}`);
+          const actual = report.cases.map((item) => item.id);
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('Security regression gate failed: case order is not deterministic');
+          if (report.cases.some((item) => item.passed !== true)) throw new Error('Security regression gate failed: at least one case failed');
+          console.log('Security regression benchmark gate passed: S01-S16');
+          NODE
+      - name: Upload security regression report
+        if: steps.security_regression.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-regression-results
+          path: artifacts/security-regression-results.json
+          if-no-files-found: error
       - name: Test
         id: test
         run: pnpm test
