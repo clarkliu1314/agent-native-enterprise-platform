@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createSecurityContext } from '@agent-native/runtime/security-context';
-import { authorizeComponent } from '@agent-native/runtime/least-privilege';
-import { validateAuditRecord } from '@agent-native/runtime/auditability';
+import { createSecurityContext, authorizeComponent, validateAuditRecord } from '@agent-native/runtime';
 import {
   productionReadinessCaseIds,
   productionReadinessCases,
@@ -36,10 +34,12 @@ describe('production readiness benchmark harness', () => {
   });
 
   it('preserves deterministic case order when one check fails', async () => {
-    const report = await runProductionReadinessBenchmark([
-      ...productionReadinessCaseIds.map((id) => ({ id, run: () => undefined })),
-      // This duplicate is intentionally replaced below by a failing P09 fixture.
-    ].map((check) => check.id === 'P09' ? { id: 'P09' as const, run: () => { throw new Error('synthetic failure'); } } : check));
+    const report = await runProductionReadinessBenchmark(
+      productionReadinessCaseIds.map((id) => ({
+        id,
+        run: id === 'P09' ? () => { throw new Error('synthetic failure'); } : () => undefined,
+      })),
+    );
 
     expect(report.cases).toEqual([
       { id: 'P01', passed: true }, { id: 'P02', passed: true }, { id: 'P03', passed: true },
