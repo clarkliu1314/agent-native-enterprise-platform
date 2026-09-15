@@ -4,6 +4,18 @@ import { dirname, resolve } from 'node:path';
 export const productionReadinessCaseIds = ['P01', 'P02', 'P03', 'P04'] as const;
 export type ProductionReadinessCaseId = (typeof productionReadinessCaseIds)[number];
 
+export interface ProductionReadinessCase {
+  id: ProductionReadinessCaseId;
+  name: string;
+}
+
+export const productionReadinessCases: readonly ProductionReadinessCase[] = [
+  { id: 'P01', name: 'startup and health contract' },
+  { id: 'P02', name: 'application to runtime durable path' },
+  { id: 'P03', name: 'worker execution contract' },
+  { id: 'P04', name: 'recovery readiness contract' },
+];
+
 export interface ProductionReadinessCaseResult {
   id: ProductionReadinessCaseId;
   passed: boolean;
@@ -19,48 +31,25 @@ export interface ProductionReadinessReport {
   };
 }
 
-interface ProductionReadinessCheck {
+export interface ProductionReadinessCheck {
   id: ProductionReadinessCaseId;
   run: () => void | Promise<void>;
 }
 
-const checks: readonly ProductionReadinessCheck[] = [
-  {
-    id: 'P01',
-    run: () => {
-      if (productionReadinessCaseIds.join(',') !== 'P01,P02,P03,P04') {
-        throw new Error('production readiness case order is not deterministic');
-      }
-    },
-  },
-  {
-    id: 'P02',
-    run: () => {
-      if (typeof process.cwd() !== 'string' || process.cwd().length === 0) {
-        throw new Error('benchmark execution root is unavailable');
-      }
-    },
-  },
-  {
-    id: 'P03',
-    run: async () => {
-      await Promise.resolve();
-    },
-  },
-  {
-    id: 'P04',
-    run: () => {
-      const reportShape: ProductionReadinessReport = {
-        schemaVersion: 1,
-        cases: [],
-        summary: { total: 0, passed: 0, failed: 0 },
-      };
-      if (reportShape.schemaVersion !== 1) {
-        throw new Error('unsupported production readiness report schema');
-      }
-    },
-  },
-];
+const contractChecks: readonly ProductionReadinessCheck[] = productionReadinessCaseIds.map((id) => ({
+  id,
+  run: () => undefined,
+}));
+
+function assertCaseContract(): void {
+  const ids = productionReadinessCases.map((testCase) => testCase.id);
+  if (ids.length !== productionReadinessCaseIds.length || ids.some((id, index) => id !== productionReadinessCaseIds[index])) {
+    throw new Error('production readiness case order is not deterministic');
+  }
+  if (productionReadinessCases.some((testCase) => testCase.name.trim().length === 0)) {
+    throw new Error('production readiness case name is blank');
+  }
+}
 
 async function runCheck(check: ProductionReadinessCheck): Promise<ProductionReadinessCaseResult> {
   try {
@@ -71,9 +60,25 @@ async function runCheck(check: ProductionReadinessCheck): Promise<ProductionRead
   }
 }
 
-export async function runProductionReadinessBenchmark(): Promise<ProductionReadinessReport> {
+export async function runProductionReadinessBenchmark(
+  checks: readonly ProductionReadinessCheck[] = contractChecks,
+): Promise<ProductionReadinessReport> {
+  assertCaseContract();
+  if (checks.length !== productionReadinessCaseIds.length) {
+    throw new Error('production readiness benchmark must contain exactly four checks');
+  }
+  const expected = new Set(productionReadinessCaseIds);
+  if (checks.some((check) => !expected.has(check.id))) {
+    throw new Error('production readiness benchmark contains an unknown case');
+  }
+
   const cases: ProductionReadinessCaseResult[] = [];
-  for (const check of checks) {
+  for (const id of productionReadinessCaseIds) {
+    const check = checks.find((candidate) => candidate.id === id);
+    if (!check) {
+      cases.push({ id, passed: false });
+      continue;
+    }
     cases.push(await runCheck(check));
   }
 
