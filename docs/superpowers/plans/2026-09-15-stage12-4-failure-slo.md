@@ -1,6 +1,6 @@
 # Stage 12.4 Failure & SLO Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement measurable failure semantics, SLO/error-budget controls, and deterministic failure-injection coverage for the durable Agent-native runtime without changing the authoritative runtime model.
 
@@ -9,6 +9,8 @@
 **Tech Stack:** TypeScript, PostgreSQL, Redis, existing RuntimeFacade/application composition, Vitest, Docker Compose, GitHub Actions.
 
 **Spec:** `docs/superpowers/specs/2026-09-15-stage12-4-failure-slo.md`
+
+**Current status (2026-09-15):** Design/approval gate accepted. Tasks 1–6 are implemented and the exact branch-head CI Run #815 passed on commit `963a72fddb5bee35792052806fbd4436f7a3f555`. Task 7 final verification, PR readiness, merge, mainline verification, and closeout documentation remain.
 
 ## File map
 
@@ -25,57 +27,75 @@ Do not create a second runtime, scheduler, event dispatcher, authoritative Redis
 
 ## Task 1 — Establish failure/SLO contracts
 
-- [ ] Inspect existing error codes, lifecycle telemetry, Run FSM, attempt/recovery, and configuration patterns.
-- [ ] Write failing unit/contract tests for failure classification and retryability.
-- [ ] Implement minimal framework-neutral failure taxonomy and policy interfaces.
-- [ ] Add tests for terminal vs retryable failures and bounded backoff.
-- [ ] Verify no new Run FSM state is introduced.
-- [ ] Commit `feat(stage12.4): define failure policy contracts`.
+- [x] Inspect existing error codes, lifecycle telemetry, Run FSM, attempt/recovery, and configuration patterns.
+- [x] Write failing unit/contract tests for failure classification and retryability.
+- [x] Implement minimal framework-neutral failure taxonomy and policy interfaces.
+- [x] Add tests for terminal vs retryable failures and bounded backoff.
+- [x] Verify no new Run FSM state is introduced.
+- [x] Commit `feat(stage12.4): define failure policy contracts`.
 
 ## Task 2 — Implement timeout semantics
 
-- [ ] Write failing tests for API handoff, worker execution, tool, and recovery timeout boundaries.
-- [ ] Implement typed timeout outcomes at existing boundaries.
-- [ ] Verify client/API timeout after durable acceptance does not falsely mark the run failed.
-- [ ] Verify effect-uncertain tool retry requires existing durable idempotency.
-- [ ] Run targeted tests and commit `feat(stage12.4): implement timeout semantics`.
+- [x] Write failing tests for API handoff, worker execution, tool, and recovery timeout boundaries.
+- [x] Implement typed timeout outcomes at existing boundaries.
+- [x] Verify client/API timeout after durable acceptance does not falsely mark the run failed.
+- [x] Verify effect-uncertain tool retry requires existing durable idempotency.
+- [x] Run targeted tests and commit `feat(stage12.4): implement timeout semantics`.
 
 ## Task 3 — Implement backpressure/concurrency policy
 
-- [ ] Write failing tests for bounded worker concurrency and queue saturation.
-- [ ] Implement admission/backpressure using existing durable queue state and delivery mechanisms.
-- [ ] Verify saturation does not introduce process-memory authoritative state.
-- [ ] Verify queued work remains durable and operational pause/resume semantics remain unchanged.
-- [ ] Run targeted tests and commit `feat(stage12.4): add bounded backpressure policy`.
+- [x] Write failing tests for bounded worker concurrency and queue saturation.
+- [x] Implement admission/backpressure using existing durable queue state and delivery mechanisms.
+- [x] Verify saturation does not introduce process-memory authoritative state.
+- [x] Verify queued work remains durable and operational pause/resume semantics remain unchanged.
+- [x] Run targeted tests and commit `feat(stage12.4): add bounded backpressure policy`.
 
 ## Task 4 — Add SLI/SLO and error-budget measurements
 
-- [ ] Map the five SLI definitions to existing Stage 12.1 metric/error-code primitives.
-- [ ] Write failing metric-contract tests for bounded labels and required measurements.
-- [ ] Implement SLI calculations and configurable SLO targets.
-- [ ] Implement fast-burn/slow-burn alert-threshold configuration without hard-coding deployment-specific alert infrastructure into the runtime.
-- [ ] Verify audit completeness remains a correctness invariant rather than an error-budget tradeoff.
-- [ ] Run targeted observability tests and commit `feat(stage12.4): add SLO measurements`.
+- [x] Map the five SLI definitions to existing Stage 12.1 metric/error-code primitives.
+- [x] Write failing metric-contract tests for bounded labels and required measurements.
+- [x] Implement SLI calculations and configurable SLO targets.
+- [x] Implement fast-burn/slow-burn alert-threshold configuration without hard-coding deployment-specific alert infrastructure into the runtime.
+- [x] Verify audit completeness remains a correctness invariant rather than an error-budget tradeoff.
+- [x] Run targeted observability tests and commit `feat(stage12.4): add SLO measurements`.
 
 ## Task 5 — Failure injection and recovery hardening
 
-- [ ] Add deterministic PostgreSQL transaction-failure injections.
-- [ ] Add Outbox pre-delivery and post-attempt crash/failure injections.
-- [ ] Add worker crash before/after checkpoint commit.
-- [ ] Add stale-worker fencing assertions.
-- [ ] Add effect-uncertain tool timeout/idempotency replay tests.
-- [ ] Add API timeout-after-acceptance test.
-- [ ] Add Redis degradation and concurrency saturation tests.
-- [ ] Add retry-exhaustion-to-`FAILED` and cancellation-race tests.
-- [ ] Add audit atomicity and telemetry-isolation regression tests.
-- [ ] Run all new failure-injection tests and commit `test(stage12.4): cover failure injection matrix`.
+- [x] Add deterministic PostgreSQL transaction-failure injections.
+- [x] Add Outbox pre-delivery and post-attempt crash/failure injections.
+- [x] Add worker crash before/after checkpoint commit.
+- [x] Add stale-worker fencing assertions across run transition, event append, checkpoint, and atomic run-progress writes.
+- [x] Add effect-uncertain tool timeout/idempotency replay tests.
+- [x] Add API timeout-after-acceptance test.
+- [x] Add Redis degradation and concurrency saturation tests.
+- [x] Add retry-exhaustion-to-`FAILED` and cancellation-race tests.
+- [x] Add audit atomicity and telemetry-isolation regression tests.
+- [x] Run all new failure-injection tests and commit `test(stage12.4): cover failure injection matrix`.
+
+### Task 5 evidence recorded
+
+- PostgreSQL transaction-failure coverage proves post-write failure before commit rolls back both Run and Event writes.
+- Durable PostgreSQL coverage exercises lease expiry → reclaim → fencing token increment, then proves the stale owner cannot transition the Run, append an Event, persist a Checkpoint, or commit Run metadata/checkpoint progress.
+- Existing cancellation-race and checkpoint-transaction-rollback integration tests remain part of the durable regression surface.
+- `packages/runtime/src/outbox-publisher.failure-injection.test.ts` covers both pre-delivery failure and post-attempt acknowledgement loss under existing at-least-once semantics.
+- Effect-uncertain replay, API timeout-after-acceptance, Redis degradation, worker saturation, retry exhaustion, audit atomicity, and telemetry isolation are covered by the Stage 12.4 failure-injection regression suite.
+- No runtime architecture change was introduced; existing PostgreSQL fencing, Outbox claim/ack/retry, recovery, and observability boundaries are being regression-tested rather than duplicated.
 
 ## Task 6 — Production benchmark integration
 
-- [ ] Add Stage 12.4 benchmark cases with explicit initial DB state, injected fault, expected durable state, audit, telemetry, and replay assertions.
-- [ ] Integrate them into the existing unified benchmark adapter surface without weakening the existing 64-case gate.
-- [ ] Verify adapter/framework neutrality.
-- [ ] Run the complete benchmark suite and commit `test(stage12.4): add failure and SLO benchmark gates`.
+- [x] Add Stage 12.4 benchmark cases with explicit initial DB state, injected fault, expected durable state, audit, telemetry, and replay assertions.
+- [x] Integrate them into the existing unified benchmark adapter surface without weakening the existing 64-case gate.
+- [x] Verify adapter/framework neutrality.
+- [x] Run the complete benchmark suite and commit `test(stage12.4): add failure and SLO benchmark gates`.
+
+### Task 6 evidence recorded
+
+- Added `packages/benchmark/src/failure-slo-benchmark.ts` and its contract test.
+- Four failure/SLO scenarios (`F01`–`F04`) are exercised across all four adapters (`agentscope`, `langgraph`, `eino`, `mastra`) for 16 adapter/scenario combinations.
+- The new gate validates durable lifecycle, checkpoint/recovery identity, replay invariants, and absence of invariant violations across the unified adapter surface.
+- The original 16-case × 4-adapter = 64-case hard gate remains unchanged.
+- Infrastructure-specific PostgreSQL/Redis failure semantics remain covered by the runtime failure-injection suite; the cross-adapter benchmark intentionally validates framework-neutral durable invariants rather than duplicating infrastructure fault machinery.
+- CI Run #815 passed on exact branch HEAD `963a72fddb5bee35792052806fbd4436f7a3f555`, including the 64-case benchmark, Failure/SLO benchmark gate, full tests, and Compose smoke.
 
 ## Task 7 — Full verification and documentation
 

@@ -88,6 +88,8 @@ jobs:
           name: benchmark-results
           path: artifacts/benchmark-results.json
           if-no-files-found: error
+      - name: Failure and SLO benchmark gate
+        run: pnpm exec vitest run packages/benchmark/src/failure-slo-benchmark.test.ts
       - name: Test
         id: test
         run: pnpm test
