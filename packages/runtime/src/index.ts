@@ -15,8 +15,8 @@ export { OperationalControlService, OperationalControlError, InMemoryOperational
 export { PostgresOperationalControlRepository } from './postgres-operational-control-repository';
 export { PostgresAuditRepository } from './postgres-audit-repository';
 export { AuditQueryService } from './audit-query-service';
-export { createSecurityContext, requireSecurityContext, SecurityContextError } from './security-context';
-export type { SecurityContext, SecurityContextInput } from './security-context';
+export { TenantIsolationError, assertCommandTenant, assertRunTenant, assertTenantOwnership } from './tenant-scope';
+export type * from './security-context';
 export type * from './auditability';
 export type * from './operational-control';
 export type * from './ports';
