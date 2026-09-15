@@ -5,7 +5,7 @@ const databaseUrl = process.env.DATABASE_URL;
 const describeIntegration = databaseUrl ? describe : describe.skip;
 
 describeIntegration('Stage 12.4 PostgreSQL failure injection', () => {
-  it('rolls back command transaction when a post-write failure is injected before commit', async () => {
+  it('rolls back command transaction when PostgreSQL fails after business writes', async () => {
     const db = new PostgresDatabase(databaseUrl!);
     const runId = `run:failure-injection:${Date.now()}`;
     const eventId = `event:failure-injection:${Date.now()}`;
@@ -21,9 +21,9 @@ describeIntegration('Stage 12.4 PostgreSQL failure injection', () => {
             `INSERT INTO agent_events (event_id, run_id, sequence, type, payload) VALUES ($1, $2, 1, 'RUN_ACCEPTED', $3::jsonb)`,
             [eventId, runId, JSON.stringify({ runId })],
           );
-          throw new Error('injected postgres failure before commit');
+          await tx.query('SELECT * FROM stage12_4_injected_postgres_failure');
         }),
-      ).rejects.toThrow('injected postgres failure before commit');
+      ).rejects.toThrow();
 
       const run = await db.query('SELECT 1 FROM agent_runs WHERE run_id=$1', [runId]);
       const events = await db.query('SELECT 1 FROM agent_events WHERE run_id=$1', [runId]);
