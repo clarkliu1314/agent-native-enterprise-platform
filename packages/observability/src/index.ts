@@ -1,6 +1,9 @@
 import { sanitizeAttributes } from './sanitizer.js';
 export { sanitizeAttributes, type SafeScalar } from './sanitizer.js';
 export { MemoryObservabilityMetrics, assertBoundedMetricLabels, assertCanonicalMetricName, type MetricEntry, type MetricLabels } from './testing.js';
+export { SLO_TARGETS, calculateErrorBudget, classifyBurnRate, type BurnRateClass } from './slo-policy.js';
+export { calculateRatio, calculateBurnRate, calculateErrorBudgetRemaining } from './slo-measurements.js';
+export { emitSloSnapshot, type SloMeasurement, type SloName, type SloSnapshot } from './slo-metrics.js';
 
 export type CorrelationContext = {
   requestId: string;
