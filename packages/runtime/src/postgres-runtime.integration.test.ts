@@ -123,6 +123,91 @@ describeIfDatabase('PostgresRuntimeRepositories', () => {
     }
   });
 
+  it('rejects all stale-worker durable writes after a newer worker reclaims the expired lease', async () => {
+    const runId = `fencing-regression-${randomUUID()}`;
+    const idempotencyKey = `fencing-regression-idem-${randomUUID()}`;
+    const eventId = `fencing-regression-event-${randomUUID()}`;
+    const checkpointId = `fencing-regression-checkpoint-${randomUUID()}`;
+
+    try {
+      await repos.admitRun({
+        command: {
+          agentId: 'integration',
+          input: {},
+          idempotencyKey,
+          metadata: { tenantId: 'tenant-fencing', requestId: `req-${runId}`, traceId: `trace-${runId}` },
+        },
+        commandHash: 'fencing-regression-hash',
+        runId,
+        eventId,
+      });
+
+      const first = await repos.claimRun(runId, 'worker-stale', 1);
+      expect(first?.fencingToken).toBe(1n);
+      await db.query("UPDATE agent_runs SET lease_expires_at=now()-interval '1 second' WHERE run_id=$1", [runId]);
+
+      const second = await repos.reclaimExpiredRun(runId, 'worker-current', 30_000);
+      expect(second?.fencingToken).toBe(2n);
+
+      await expect(repos.transitionRun({
+        runId,
+        fencingToken: first!.fencingToken,
+        from: 'RUNNING',
+        to: 'CANCELLED',
+        owner: 'worker-stale',
+      })).rejects.toThrow('Durable run write rejected');
+
+      await expect(repos.appendEvent({
+        runId,
+        fencingToken: first!.fencingToken,
+        type: 'STALE_WORKER_EVENT',
+        payload: {},
+      })).rejects.toThrow('Fenced event write rejected');
+
+      await expect(repos.saveCheckpoint({
+        checkpointId,
+        runId,
+        sequence: 1n,
+        fencingToken: first!.fencingToken,
+        createdAt: new Date().toISOString(),
+        adapter: 'test',
+        adapterVersion: '1',
+        schemaVersion: 1,
+        payload: new Uint8Array([1]),
+      })).rejects.toThrow('Fenced checkpoint write rejected');
+
+      await expect(repos.saveRunProgress({
+        runId,
+        fencingToken: first!.fencingToken,
+        metadata: { staleWorker: true },
+        checkpoint: {
+          checkpointId: `${checkpointId}-progress`,
+          runId,
+          sequence: 1n,
+          fencingToken: first!.fencingToken,
+          createdAt: new Date().toISOString(),
+          adapter: 'test',
+          adapterVersion: '1',
+          schemaVersion: 1,
+          payload: new Uint8Array([2]),
+        },
+      })).rejects.toThrow('Fenced run progress write rejected');
+
+      const current = await repos.getRun(runId);
+      expect(current?.state).toBe('RUNNING');
+      expect(current?.fencingToken).toBe(2n);
+      expect(current?.metadata).not.toMatchObject({ staleWorker: true });
+      await expect(repos.listEvents(runId)).resolves.toHaveLength(1);
+      await expect(repos.getLatestCheckpoint(runId)).resolves.toBeNull();
+    } finally {
+      await db.query('DELETE FROM checkpoints WHERE run_id=$1', [runId]);
+      await db.query('DELETE FROM outbox_events WHERE outbox_id LIKE $1', [`outbox:${eventId}%`]);
+      await db.query('DELETE FROM agent_events WHERE run_id=$1', [runId]);
+      await db.query('DELETE FROM idempotency_keys WHERE run_id=$1', [runId]);
+      await db.query('DELETE FROM agent_runs WHERE run_id=$1', [runId]);
+    }
+  });
+
   it('claims a queued Run exactly once and fences subsequent ownership', async () => {
     const eventId = `event-${ids.run}`;
     await repos.admitRun({
