@@ -88,6 +88,8 @@ jobs:
           name: benchmark-results
           path: artifacts/benchmark-results.json
           if-no-files-found: error
+      - name: Failure and SLO benchmark gate
+        run: pnpm exec vitest run packages/benchmark/src/failure-slo-benchmark.test.ts
       - name: Test
         id: test
         run: pnpm test
@@ -97,6 +99,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
       - name: Validate Compose configuration
         run: docker compose config
       - name: Start local environment
