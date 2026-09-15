@@ -27,7 +27,8 @@ describe('durable recovery auditability', () => {
     const coordinator = new RecoveryCoordinator(service, { audit });
 
     await coordinator.recover({ request, state: 'IN_PROGRESS', correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-a', runId: 'run-1' } });
-    const result = await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 100 });
+    const now = Date.now();
+    const result = await audit.query({ tenantId: 'tenant-a', from: new Date(now - 60_000).toISOString(), to: new Date(now + 60_000).toISOString(), limit: 100 });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ actorId: 'system', actorType: 'SYSTEM', action: 'RECOVERY_SUCCEEDED', resourceType: 'RUN', resourceId: 'run-1', outcome: 'SUCCEEDED', reasonClass: 'SYSTEM', correlation: { requestId: 'req-1', traceId: 'trace-1', runId: 'run-1' } });
@@ -39,7 +40,8 @@ describe('durable recovery auditability', () => {
     const coordinator = new RecoveryCoordinator(service, { audit });
 
     await expect(coordinator.recover({ request, state: 'FAILED_FINAL', correlation: { requestId: 'req-2', traceId: 'trace-2', tenantId: 'tenant-a', runId: 'run-2' } })).rejects.toThrow();
-    const result = await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 100 });
+    const now = Date.now();
+    const result = await audit.query({ tenantId: 'tenant-a', from: new Date(now - 60_000).toISOString(), to: new Date(now + 60_000).toISOString(), limit: 100 });
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ action: 'RECOVERY_FAILED_FINAL', resourceType: 'RUN', resourceId: 'run-2', outcome: 'FAILED', reasonClass: 'SYSTEM' });
