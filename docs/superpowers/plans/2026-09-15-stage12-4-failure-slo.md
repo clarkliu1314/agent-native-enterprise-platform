@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-15-stage12-4-failure-slo.md`
 
-**Current status (2026-09-15):** Design/approval gate accepted. Tasks 1–4 have passed their current contract/implementation CI gates. Task 5 is in progress: contract-level failure injection passed in Run #801, and durable PostgreSQL stale-worker fencing coverage has now been added on the feature branch. The implementation PR remains Draft until exact branch-head CI is GREEN.
+**Current status (2026-09-15):** Design/approval gate accepted. Tasks 1–4 have passed their current contract/implementation CI gates. Task 5 is in progress: contract-level failure injection passed in Run #801, durable PostgreSQL stale-worker fencing coverage has been added, and Outbox pre-delivery/post-attempt failure injection coverage is now committed. The implementation PR remains Draft until exact branch-head CI is GREEN.
 
 ## File map
 
@@ -62,7 +62,7 @@ Do not create a second runtime, scheduler, event dispatcher, authoritative Redis
 ## Task 5 — Failure injection and recovery hardening
 
 - [ ] Add deterministic PostgreSQL transaction-failure injections.
-- [ ] Add Outbox pre-delivery and post-attempt crash/failure injections.
+- [x] Add Outbox pre-delivery and post-attempt crash/failure injections.
 - [ ] Add worker crash before/after checkpoint commit.
 - [x] Add stale-worker fencing assertions across run transition, event append, checkpoint, and atomic run-progress writes.
 - [x] Add effect-uncertain tool timeout/idempotency replay tests.
@@ -75,9 +75,10 @@ Do not create a second runtime, scheduler, event dispatcher, authoritative Redis
 ### Task 5 evidence recorded
 
 - Run #801 passed the Stage 12.4 failure-injection contract test and Compose/full test gates on commit `5ddf10a6a13667ee0b8f253250cdb29515060cb8`.
-- Durable PostgreSQL coverage now exercises lease expiry → reclaim → fencing token increment, then proves the stale owner cannot transition the Run, append an Event, persist a Checkpoint, or commit Run metadata/checkpoint progress. The current worker remains `RUNNING` with the newer fencing token and no stale artifacts.
+- Durable PostgreSQL coverage exercises lease expiry → reclaim → fencing token increment, then proves the stale owner cannot transition the Run, append an Event, persist a Checkpoint, or commit Run metadata/checkpoint progress. The current worker remains `RUNNING` with the newer fencing token and no stale artifacts.
 - Existing cancellation-race and checkpoint-transaction-rollback integration tests remain part of the same durable regression surface.
-- No runtime architecture change was introduced for this hardening step; existing PostgreSQL fencing predicates are being regression-tested rather than duplicated.
+- `packages/runtime/src/outbox-publisher.failure-injection.test.ts` now covers both pre-delivery failure (delivery rejects, no publication acknowledgement) and post-attempt acknowledgement loss (delivery succeeds, publication acknowledgement fails, event is retained for retry and may be delivered again under existing at-least-once semantics).
+- No runtime architecture change was introduced for this hardening step; existing PostgreSQL fencing and Outbox claim/ack/retry boundaries are being regression-tested rather than duplicated.
 
 ## Task 6 — Production benchmark integration
 
