@@ -1,5 +1,6 @@
 import type { RuntimeFacade } from '@agent-native/runtime-contract/durable';
 import { classifyError, createStructuredLogEvent, safeEmit, safeMetric, type CorrelationContext, type ObservabilityLogger, type ObservabilityMetrics } from '@agent-native/observability';
+import { decideWorkerAdmission, AdmissionDecision } from './admission-policy';
 import type { QueueConsumer } from './ports';
 import { OperationalControlError, type OperationalControlService } from './operational-control';
 
@@ -84,7 +85,8 @@ export class DurableWorker {
   }
 
   private async acquireSlot(): Promise<() => void> {
-    if (this.activeCount < this.maxConcurrency) {
+    const admission = decideWorkerAdmission({ activeCount: this.activeCount, maxConcurrency: this.maxConcurrency });
+    if (admission === AdmissionDecision.ACCEPT) {
       this.activeCount += 1;
       return () => this.releaseSlot();
     }
