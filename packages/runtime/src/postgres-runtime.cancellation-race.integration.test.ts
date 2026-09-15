@@ -16,7 +16,7 @@ describeIfDatabase('PostgresRuntimeRepositories cancellation race', () => {
     await db.query('DELETE FROM outbox_events WHERE event_id=$1', [eventId]);
     await db.query('DELETE FROM agent_events WHERE run_id=$1', [runId]);
     await db.query('DELETE FROM checkpoints WHERE run_id=$1', [runId]);
-    await db.query('DELETE FROM idempotency_keys WHERE run_id=$1', [idempotencyKey]);
+    await db.query('DELETE FROM idempotency_keys WHERE run_id=$1', [runId]);
     await db.query('DELETE FROM agent_runs WHERE run_id=$1', [runId]);
   });
 
@@ -24,7 +24,7 @@ describeIfDatabase('PostgresRuntimeRepositories cancellation race', () => {
     await db.query('DELETE FROM outbox_events WHERE event_id=$1', [eventId]);
     await db.query('DELETE FROM agent_events WHERE run_id=$1', [runId]);
     await db.query('DELETE FROM checkpoints WHERE run_id=$1', [runId]);
-    await db.query('DELETE FROM idempotency_keys WHERE run_id=$1', [idempotencyKey]);
+    await db.query('DELETE FROM idempotency_keys WHERE run_id=$1', [runId]);
     await db.query('DELETE FROM agent_runs WHERE run_id=$1', [runId]);
     await db.pool.end();
   });
