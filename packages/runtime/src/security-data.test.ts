@@ -17,8 +17,8 @@ describe('security data boundary', () => {
     expect(sanitizeSecurityData({ 'client-secret': 'x', Access_Token: 'y', safe: 1 })).toEqual({ safe: 1 });
   });
 
-  it('keeps telemetry and durable payloads bounded to scalar-safe data', () => {
+  it('keeps telemetry and durable payloads bounded while preserving recursively sanitized scalar records', () => {
     const value = sanitizeSecurityData({ safe: 'x'.repeat(2048), bad: { deep: true }, list: ['secret'] });
-    expect(value).toEqual({ safe: 'x'.repeat(1024) });
+    expect(value).toEqual({ safe: 'x'.repeat(1024), bad: { deep: true } });
   });
 });
