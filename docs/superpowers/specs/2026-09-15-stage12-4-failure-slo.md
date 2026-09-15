@@ -1,6 +1,6 @@
 # Stage 12.4 — Failure & SLO Specification
 
-**Status:** DESIGN / APPROVAL GATE PENDING  
+**Status:** IMPLEMENTATION IN PROGRESS — DESIGN/APPROVAL GATE ACCEPTED  
 **Date:** 2026-09-15  
 **Architecture baseline:** A
 
@@ -125,6 +125,14 @@ Required scenarios:
 
 Each case must specify initial state, injected fault, expected durable state, expected audit fact, expected telemetry/error code, and idempotency/replay assertion.
 
+### Implementation evidence — 2026-09-15
+
+- Design/approval gate is accepted; production implementation is proceeding on PR #31 (`feat/stage12-4-failure-policy-test2`).
+- Run #801 passed the Stage 12.4 failure-injection contract and Compose/full test gates on commit `5ddf10a6a13667ee0b8f253250cdb29515060cb8`.
+- Durable PostgreSQL fencing coverage now verifies lease expiry and reclaim increment the fencing token, and that the stale owner is rejected for Run transition, Event append, Checkpoint persistence, and atomic Run-progress/checkpoint persistence. The newer owner remains authoritative and no stale Event/Checkpoint/metadata artifact is committed.
+- Existing cancellation-race and checkpoint transaction-rollback tests remain in the same PostgreSQL integration surface.
+- This evidence validates the existing fencing mechanism; it does not introduce a second runtime, queue, scheduler, or authoritative state store.
+
 ## 11. Observability / control / audit integration
 
 Every failure outcome that changes durable run state must use Stage 12.1 correlation and structured lifecycle telemetry. Operational actions continue through Stage 12.2 APIs and authorization. Material transitions and rejected controls continue to create Stage 12.3 audit facts inside the existing transaction boundary.
@@ -150,4 +158,4 @@ Then merge only after branch-head CI is GREEN, and verify a separate mainline CI
 
 ## 13. Design gate
 
-Implementation is **blocked** until this specification and the corresponding implementation plan are explicitly approved. Approval means the failure taxonomy, SLO baseline, timeout/retry semantics, backpressure model, failure-injection matrix, and acceptance gates are accepted without introducing a second durable runtime model.
+The design/approval gate has been **accepted**. Implementation is now permitted under the locked failure taxonomy, SLO baseline, timeout/retry semantics, backpressure model, failure-injection matrix, and acceptance gates above. No second durable runtime model may be introduced.
