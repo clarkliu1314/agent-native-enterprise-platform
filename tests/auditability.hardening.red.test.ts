@@ -44,10 +44,11 @@ describe('auditability hardening RED gate', () => {
       },
     })).rejects.toMatchObject({ code: 'AUTHORIZATION_DENIED' });
 
+    const now = Date.now();
     const result = await audit.query({
       tenantId: 'tenant-a',
-      from: '2026-09-14T00:00:00.000Z',
-      to: '2026-09-15T00:00:00.000Z',
+      from: new Date(now - 60_000).toISOString(),
+      to: new Date(now + 60_000).toISOString(),
       limit: 100,
     });
 

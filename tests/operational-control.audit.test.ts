@@ -11,7 +11,13 @@ describe('operational control auditability RED gate', () => {
       idempotencyKey: 'idem-1', correlation: { requestId: 'req-1', traceId: 'trace-1', tenantId: 'tenant-a', runId: 'run-1', actorId: 'user-1' },
     });
     expect(result.outcome).toBe('SUCCEEDED');
-    const rows = (await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 20 })).items;
+    const now = Date.now();
+    const rows = (await audit.query({
+      tenantId: 'tenant-a',
+      from: new Date(now - 60_000).toISOString(),
+      to: new Date(now + 60_000).toISOString(),
+      limit: 20,
+    })).items;
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe('PAUSE');
     expect(rows[0].actorId).toBe('user-1');
@@ -26,7 +32,13 @@ describe('operational control auditability RED gate', () => {
       commandId: 'cmd-reject-1', tenantId: 'tenant-a', runId: 'run-1', actorId: 'unauthorized', action: 'CANCEL',
       idempotencyKey: 'idem-reject-1', correlation: { requestId: 'req-reject-1', traceId: 'trace-reject-1', tenantId: 'tenant-a', runId: 'run-1', actorId: 'unauthorized' },
     })).rejects.toMatchObject({ code: 'AUTHORIZATION_DENIED' } satisfies Partial<InstanceType<typeof OperationalControlError>>);
-    const rows = (await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 20 })).items;
+    const now = Date.now();
+    const rows = (await audit.query({
+      tenantId: 'tenant-a',
+      from: new Date(now - 60_000).toISOString(),
+      to: new Date(now + 60_000).toISOString(),
+      limit: 20,
+    })).items;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ outcome: 'REJECTED', action: 'CANCEL', actorId: 'unauthorized', resourceType: 'RUN', resourceId: 'REDACTED', reasonClass: 'SYSTEM' });
     expect(rows[0].metadata).not.toHaveProperty('resultingState');
@@ -43,7 +55,13 @@ describe('operational control auditability RED gate', () => {
     };
     await service.execute(command);
     const replay = await service.execute(command);
-    const rows = (await audit.query({ tenantId: 'tenant-a', from: '2026-09-14T00:00:00.000Z', to: '2026-09-15T00:00:00.000Z', limit: 20 })).items;
+    const now = Date.now();
+    const rows = (await audit.query({
+      tenantId: 'tenant-a',
+      from: new Date(now - 60_000).toISOString(),
+      to: new Date(now + 60_000).toISOString(),
+      limit: 20,
+    })).items;
     expect(replay.replayed).toBe(true);
     expect(replay.eventsCreated).toBe(0);
     expect(rows).toHaveLength(1);
