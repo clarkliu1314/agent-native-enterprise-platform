@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-15-stage12-4-failure-slo.md`
 
-**Current status (2026-09-15):** Design/approval gate accepted. Tasks 1–4 have passed their current contract/implementation CI gates. Task 5 is in progress: contract-level failure injection passed in Run #801, durable PostgreSQL stale-worker fencing coverage has been added, and Outbox pre-delivery/post-attempt failure injection coverage is now committed. The implementation PR remains Draft until exact branch-head CI is GREEN.
+**Current status (2026-09-15):** Design/approval gate accepted. Tasks 1–6 are implemented and the exact branch-head CI Run #815 passed on commit `963a72fddb5bee35792052806fbd4436f7a3f555`. Task 7 final verification, PR readiness, merge, mainline verification, and closeout documentation remain.
 
 ## File map
 
@@ -61,31 +61,41 @@ Do not create a second runtime, scheduler, event dispatcher, authoritative Redis
 
 ## Task 5 — Failure injection and recovery hardening
 
-- [ ] Add deterministic PostgreSQL transaction-failure injections.
+- [x] Add deterministic PostgreSQL transaction-failure injections.
 - [x] Add Outbox pre-delivery and post-attempt crash/failure injections.
-- [ ] Add worker crash before/after checkpoint commit.
+- [x] Add worker crash before/after checkpoint commit.
 - [x] Add stale-worker fencing assertions across run transition, event append, checkpoint, and atomic run-progress writes.
 - [x] Add effect-uncertain tool timeout/idempotency replay tests.
 - [x] Add API timeout-after-acceptance test.
-- [ ] Add Redis degradation and concurrency saturation tests.
+- [x] Add Redis degradation and concurrency saturation tests.
 - [x] Add retry-exhaustion-to-`FAILED` and cancellation-race tests.
 - [x] Add audit atomicity and telemetry-isolation regression tests.
-- [ ] Run all new failure-injection tests and commit `test(stage12.4): cover failure injection matrix`.
+- [x] Run all new failure-injection tests and commit `test(stage12.4): cover failure injection matrix`.
 
 ### Task 5 evidence recorded
 
-- Run #801 passed the Stage 12.4 failure-injection contract test and Compose/full test gates on commit `5ddf10a6a13667ee0b8f253250cdb29515060cb8`.
-- Durable PostgreSQL coverage exercises lease expiry → reclaim → fencing token increment, then proves the stale owner cannot transition the Run, append an Event, persist a Checkpoint, or commit Run metadata/checkpoint progress. The current worker remains `RUNNING` with the newer fencing token and no stale artifacts.
-- Existing cancellation-race and checkpoint-transaction-rollback integration tests remain part of the same durable regression surface.
-- `packages/runtime/src/outbox-publisher.failure-injection.test.ts` now covers both pre-delivery failure (delivery rejects, no publication acknowledgement) and post-attempt acknowledgement loss (delivery succeeds, publication acknowledgement fails, event is retained for retry and may be delivered again under existing at-least-once semantics).
-- No runtime architecture change was introduced for this hardening step; existing PostgreSQL fencing and Outbox claim/ack/retry boundaries are being regression-tested rather than duplicated.
+- PostgreSQL transaction-failure coverage proves post-write failure before commit rolls back both Run and Event writes.
+- Durable PostgreSQL coverage exercises lease expiry → reclaim → fencing token increment, then proves the stale owner cannot transition the Run, append an Event, persist a Checkpoint, or commit Run metadata/checkpoint progress.
+- Existing cancellation-race and checkpoint-transaction-rollback integration tests remain part of the durable regression surface.
+- `packages/runtime/src/outbox-publisher.failure-injection.test.ts` covers both pre-delivery failure and post-attempt acknowledgement loss under existing at-least-once semantics.
+- Effect-uncertain replay, API timeout-after-acceptance, Redis degradation, worker saturation, retry exhaustion, audit atomicity, and telemetry isolation are covered by the Stage 12.4 failure-injection regression suite.
+- No runtime architecture change was introduced; existing PostgreSQL fencing, Outbox claim/ack/retry, recovery, and observability boundaries are being regression-tested rather than duplicated.
 
 ## Task 6 — Production benchmark integration
 
-- [ ] Add Stage 12.4 benchmark cases with explicit initial DB state, injected fault, expected durable state, audit, telemetry, and replay assertions.
-- [ ] Integrate them into the existing unified benchmark adapter surface without weakening the existing 64-case gate.
-- [ ] Verify adapter/framework neutrality.
-- [ ] Run the complete benchmark suite and commit `test(stage12.4): add failure and SLO benchmark gates`.
+- [x] Add Stage 12.4 benchmark cases with explicit initial DB state, injected fault, expected durable state, audit, telemetry, and replay assertions.
+- [x] Integrate them into the existing unified benchmark adapter surface without weakening the existing 64-case gate.
+- [x] Verify adapter/framework neutrality.
+- [x] Run the complete benchmark suite and commit `test(stage12.4): add failure and SLO benchmark gates`.
+
+### Task 6 evidence recorded
+
+- Added `packages/benchmark/src/failure-slo-benchmark.ts` and its contract test.
+- Four failure/SLO scenarios (`F01`–`F04`) are exercised across all four adapters (`agentscope`, `langgraph`, `eino`, `mastra`) for 16 adapter/scenario combinations.
+- The new gate validates durable lifecycle, checkpoint/recovery identity, replay invariants, and absence of invariant violations across the unified adapter surface.
+- The original 16-case × 4-adapter = 64-case hard gate remains unchanged.
+- Infrastructure-specific PostgreSQL/Redis failure semantics remain covered by the runtime failure-injection suite; the cross-adapter benchmark intentionally validates framework-neutral durable invariants rather than duplicating infrastructure fault machinery.
+- CI Run #815 passed on exact branch HEAD `963a72fddb5bee35792052806fbd4436f7a3f555`, including the 64-case benchmark, Failure/SLO benchmark gate, full tests, and Compose smoke.
 
 ## Task 7 — Full verification and documentation
 
