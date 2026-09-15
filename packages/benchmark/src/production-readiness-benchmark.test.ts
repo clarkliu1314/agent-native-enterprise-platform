@@ -8,9 +8,9 @@ import {
 } from './production-readiness-benchmark.js';
 
 describe('production readiness benchmark harness', () => {
-  it('defines deterministic P01-P11 cases with non-empty names', () => {
+  it('defines deterministic P01-P13 cases with non-empty names', () => {
     expect(productionReadinessCaseIds).toEqual([
-      'P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08', 'P09', 'P10', 'P11',
+      'P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08', 'P09', 'P10', 'P11', 'P12', 'P13',
     ]);
     expect(productionReadinessCases.map((testCase) => testCase.id)).toEqual(productionReadinessCaseIds);
     expect(productionReadinessCases.every((testCase) => testCase.name.trim().length > 0)).toBe(true);
@@ -24,9 +24,10 @@ describe('production readiness benchmark harness', () => {
         { id: 'P01', passed: true }, { id: 'P02', passed: true }, { id: 'P03', passed: true },
         { id: 'P04', passed: true }, { id: 'P05', passed: true }, { id: 'P06', passed: true },
         { id: 'P07', passed: true }, { id: 'P08', passed: true }, { id: 'P09', passed: true },
-        { id: 'P10', passed: true }, { id: 'P11', passed: true },
+        { id: 'P10', passed: true }, { id: 'P11', passed: true }, { id: 'P12', passed: true },
+        { id: 'P13', passed: true },
       ],
-      summary: { total: 11, passed: 11, failed: 0 },
+      summary: { total: 13, passed: 13, failed: 0 },
     };
 
     expect(report).toEqual(expected);
@@ -45,12 +46,13 @@ describe('production readiness benchmark harness', () => {
       { id: 'P01', passed: true }, { id: 'P02', passed: true }, { id: 'P03', passed: true },
       { id: 'P04', passed: true }, { id: 'P05', passed: true }, { id: 'P06', passed: true },
       { id: 'P07', passed: true }, { id: 'P08', passed: true }, { id: 'P09', passed: false },
-      { id: 'P10', passed: true }, { id: 'P11', passed: true },
+      { id: 'P10', passed: true }, { id: 'P11', passed: true }, { id: 'P12', passed: true },
+      { id: 'P13', passed: true },
     ]);
-    expect(report.summary).toEqual({ total: 11, passed: 10, failed: 1 });
+    expect(report.summary).toEqual({ total: 13, passed: 12, failed: 1 });
   });
 
-  it('covers least privilege, audit safety, and sanitized observability contracts', async () => {
+  it('covers least privilege, audit safety, sanitized observability, failure/SLO, and retention contracts', async () => {
     const securityContext = createSecurityContext({ tenantId: 'tenant-a', actorId: 'actor-1', permissions: ['tool:invoke'] });
     expect(authorizeComponent(securityContext, 'tool')).toBe(securityContext);
     expect(() => authorizeComponent(securityContext, 'worker')).toThrow(/permission denied/);
@@ -63,5 +65,7 @@ describe('production readiness benchmark harness', () => {
 
     const report = await runProductionReadinessBenchmark();
     expect(report.cases.find(({ id }) => id === 'P11')?.passed).toBe(true);
+    expect(report.cases.find(({ id }) => id === 'P12')?.passed).toBe(true);
+    expect(report.cases.find(({ id }) => id === 'P13')?.passed).toBe(true);
   });
 });
