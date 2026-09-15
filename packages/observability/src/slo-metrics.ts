@@ -1,9 +1,9 @@
 import type { ObservabilityMetrics } from './index.js';
 import { safeMetric } from './index.js';
-import { calculateErrorBudget } from './slo-policy.js';
+import { SLO_TARGETS, calculateErrorBudget } from './slo-policy.js';
 import { calculateBurnRate, calculateErrorBudgetRemaining } from './slo-measurements.js';
 
-export type SloName = keyof typeof import('./slo-policy.js').SLO_TARGETS;
+export type SloName = keyof typeof SLO_TARGETS;
 
 export type SloMeasurement = {
   complianceRatio: number;
@@ -25,7 +25,7 @@ function assertRatio(value: number, name: string): void {
 }
 
 export function emitSloSnapshot(metrics: ObservabilityMetrics, snapshot: SloSnapshot): void {
-  for (const [name, target] of Object.entries(import('./slo-policy.js').SLO_TARGETS) as [SloName, number][]) {
+  for (const [name, target] of Object.entries(SLO_TARGETS) as [SloName, number][]) {
     const measurement = snapshot[name];
     if (!measurement) throw new Error(`Missing SLO measurement: ${name}`);
     assertRatio(measurement.complianceRatio, `${name} complianceRatio`);
