@@ -4,7 +4,7 @@ import {
   ToolExecutionService,
   type ToolExecutionRequest,
   type ToolExecutionStore,
-} from '@agent-native/tool-runtime';
+} from '../packages/tool-runtime/src';
 import { RecoveryCoordinator } from '../packages/durability/src/recovery';
 
 const request: ToolExecutionRequest = {
