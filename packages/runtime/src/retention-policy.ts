@@ -16,6 +16,7 @@ export interface RetentionEvidence {
   actorId: string;
   category: Exclude<RetentionCategory, 'CORRECTNESS'>;
   cutoff: string;
+  deletedIds: string[];
   deletedCount: number;
   idempotencyKey: string;
   occurredAt: string;
@@ -97,7 +98,7 @@ export class InMemoryRetentionRepository implements RetentionRepository {
   async appendPurgeEvidence(evidence: RetentionEvidence): Promise<void> {
     const key = `${evidence.tenantId}:${evidence.idempotencyKey}`;
     if (this.evidence.has(key)) throw new RetentionPolicyError('RETENTION_DUPLICATE', 'Purge evidence already exists');
-    this.evidence.set(key, { ...evidence });
+    this.evidence.set(key, { ...evidence, deletedIds: [...evidence.deletedIds] });
   }
 
   async list(tenantId: string, category: RetentionCategory): Promise<RetentionRecord[]> {
@@ -105,7 +106,7 @@ export class InMemoryRetentionRepository implements RetentionRepository {
   }
 
   async listEvidence(tenantId: string): Promise<RetentionEvidence[]> {
-    return [...this.evidence.values()].filter((item) => item.tenantId === tenantId).map((item) => ({ ...item }));
+    return [...this.evidence.values()].filter((item) => item.tenantId === tenantId).map((item) => ({ ...item, deletedIds: [...item.deletedIds] }));
   }
 }
 
@@ -120,8 +121,7 @@ export class RetentionPurgeService {
       correctnessDays: policy.correctnessDays ?? Number.POSITIVE_INFINITY,
     };
     for (const [key, days] of Object.entries(this.policy)) {
-      if (days <= 0 && key !== 'correctnessDays') throw new RetentionPolicyError('RETENTION_INVALID_POLICY', `${key} must be positive`);
-      if (days <= 0 && key === 'correctnessDays') throw new RetentionPolicyError('RETENTION_INVALID_POLICY', `${key} must not be non-positive`);
+      if (days <= 0) throw new RetentionPolicyError('RETENTION_INVALID_POLICY', `${key} must be positive`);
     }
   }
 
@@ -146,7 +146,7 @@ export class RetentionPurgeService {
     }
 
     const existing = await this.repository.findPurgeEvidence(tenantId, request.idempotencyKey);
-    if (existing) return { deletedIds: [], deletedCount: existing.deletedCount, replayed: true, evidence: existing };
+    if (existing) return { deletedIds: [...existing.deletedIds], deletedCount: existing.deletedCount, replayed: true, evidence: existing };
 
     const retentionDays = this.daysFor(request.category);
     const cutoff = new Date(nowMs - retentionDays * 24 * 60 * 60 * 1000).toISOString();
@@ -161,6 +161,7 @@ export class RetentionPurgeService {
       actorId: context.actorId,
       category: request.category,
       cutoff,
+      deletedIds: [...deletedIds],
       deletedCount,
       idempotencyKey: request.idempotencyKey,
       occurredAt: request.now,

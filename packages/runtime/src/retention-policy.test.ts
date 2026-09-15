@@ -115,6 +115,8 @@ describe('RetentionPurgeService', () => {
     expect(first.deletedIds).toEqual(['telemetry-1']);
     expect(second.replayed).toBe(true);
     expect(second.deletedIds).toEqual(first.deletedIds);
+    expect(second.deletedCount).toBe(first.deletedCount);
+    expect(second.evidence).toEqual(first.evidence);
     expect(await repository.listEvidence('tenant-a')).toHaveLength(1);
   });
 
