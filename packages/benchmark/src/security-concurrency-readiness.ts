@@ -16,7 +16,7 @@ export interface DuplicateRequestProbeResult {
 export type SensitiveDataBoundary = ReadonlySet<string>;
 
 export function buildSensitiveDataBoundary(fields: readonly string[]): SensitiveDataBoundary {
-  const normalized = fields.map((field) => field.trim()).filter(Boolean);
+  const normalized = fields.map((field) => field.trim().toLowerCase()).filter(Boolean);
   return new Set(normalized);
 }
 
@@ -27,7 +27,9 @@ export function sanitizeBoundaryPayload<T>(boundary: SensitiveDataBoundary, valu
   if (value && typeof value === 'object') {
     const result: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      result[key] = boundary.has(key) ? '[REDACTED]' : sanitizeBoundaryPayload(boundary, child);
+      result[key] = boundary.has(key.trim().toLowerCase())
+        ? '[REDACTED]'
+        : sanitizeBoundaryPayload(boundary, child);
     }
     return result as T;
   }
