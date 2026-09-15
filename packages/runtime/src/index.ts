@@ -12,6 +12,7 @@ export { ToolExecutionService } from './tool-execution-service';
 export { ModelExecutionService, hashModelRequest } from './model-execution-service';
 export { CheckpointService } from './checkpoint-service';
 export { OperationalControlService, OperationalControlError, InMemoryOperationalControlRepository } from './operational-control';
+export type { OperationalControlAction, OperationalControlOutcome, OperationalControlCommand, OperationalControlState, OperationalControlEvent, OperationalControlRepository, RecoveryDelegator, TelemetrySink, AuthorizationPolicy, OperationalControlResult, OperationalControlServiceOptions } from './operational-control';
 export { PostgresOperationalControlRepository } from './postgres-operational-control-repository';
 export { PostgresAuditRepository } from './postgres-audit-repository';
 export { AuditQueryService } from './audit-query-service';
