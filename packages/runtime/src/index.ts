@@ -17,6 +17,8 @@ export { PostgresAuditRepository } from './postgres-audit-repository';
 export { AuditQueryService } from './audit-query-service';
 export { TenantIsolationError, assertCommandTenant, assertRunTenant, assertTenantOwnership } from './tenant-scope';
 export { authorizeComponent, createSecuredToolPermission } from './least-privilege';
+export { sanitizeSecurityData, type SecuritySafeScalar } from './security-data';
+export { sanitizeSecurityError } from './security-errors';
 export type * from './security-context';
 export type * from './auditability';
 export type * from './operational-control';
