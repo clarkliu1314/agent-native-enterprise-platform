@@ -1,4 +1,4 @@
-import type { InvestmentWorkflowRuntime } from './runtime-port';
+import type { InvestmentWorkflowRuntime } from '../application/runtime-port';
 
 export interface InvestmentWorkflowStartResult { runId: string; opportunityId: string; }
 
