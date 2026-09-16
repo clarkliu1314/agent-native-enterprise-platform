@@ -14,6 +14,14 @@ describe('benchmark architecture boundaries', () => {
     }
   });
 
+  it('keeps the shared framework independent from parent benchmark composition modules', async () => {
+    for (const entry of await readdir(frameworkRoot, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
+      const content = await readFile(join(frameworkRoot, entry.name), 'utf8');
+      expect(content, `${entry.name} must not import parent benchmark modules`).not.toMatch(/from ['"]\.\.\//);
+    }
+  });
+
   it('keeps investment cases on the shared benchmark contract', async () => {
     const content = await readFile(join(process.cwd(), 'packages/benchmark/src/cases/investment/index.ts'), 'utf8');
     expect(content).toContain("from '../../framework/types'");
