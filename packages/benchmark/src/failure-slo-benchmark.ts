@@ -1,7 +1,7 @@
 import { InMemoryAgentRuntime } from '@agent-native/runtime';
 import type { BenchmarkAdapter } from './index';
 import { benchmarkAdapters } from './index';
-import { createBenchmarkAdapters } from './adapters';
+import { createBenchmarkAdapters } from './framework/adapters';
 
 export interface FailureSloBenchmarkCase {
   id: 'F01' | 'F02' | 'F03' | 'F04';
