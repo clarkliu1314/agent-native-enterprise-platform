@@ -1,9 +1,9 @@
 import { InvestmentApplicationService } from '../../../packages/investment-domain/src/application/application-service';
 import type { AdvanceOpportunityStageCommand, ApproveInvestmentCommand, CreateOpportunityCommand, InvestmentDecisionCommand, RejectInvestmentCommand } from '../../../packages/investment-domain/src/application/commands';
+import type { InvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/application/runtime-port';
 import { PostgresInvestmentUnitOfWork } from '../../../packages/investment-domain/src/persistence/unit-of-work';
 import { InvestmentWorkflow } from '../../../packages/investment-domain/src/workflow/workflow';
 import { PostgresInvestmentWorkflowRuntime, type InvestmentWorkflowDatabase } from '../../../packages/investment-domain/src/persistence/postgres-workflow-runtime';
-import type { InvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/workflow/runtime-port';
 import { PostgresAuditRepository, PostgresDatabase } from '@agent-native/runtime';
 import type { InvestmentApiApplication } from './investment-handler';
 
