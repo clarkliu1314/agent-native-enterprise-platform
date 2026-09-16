@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { benchmarkAdapters } from '../../framework/types';
+import { benchmarkAdapters } from './framework/types';
 import { failureSloBenchmarkCases, runFailureSloBenchmark } from './cases/platform/failure-slo-benchmark';
 
 describe('Stage 12.4 failure/SLO benchmark matrix', () => {
