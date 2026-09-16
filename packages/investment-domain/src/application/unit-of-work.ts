@@ -1,24 +1,15 @@
-import type {
-  InvestmentDecisionRepository,
-  InvestmentOpportunityRepository,
-} from "./repositories";
-import type { InvestmentEventStore } from "./event-store";
-
-export interface InvestmentSqlClient {
-  query<T extends Record<string, unknown> = Record<string, unknown>>(
-    text: string,
-    values?: unknown[],
-  ): Promise<{ rows: T[] }>;
-}
+import type { TransactionalAuditRepository } from '@agent-native/runtime';
+import type { InvestmentDecisionRepository, InvestmentOpportunityRepository } from './repositories';
+import type { InvestmentEventStore, InvestmentSqlClient } from './event-store';
 
 export interface InvestmentTransactionContext {
-  sql: InvestmentSqlClient;
+  tx: InvestmentSqlClient;
   opportunities: InvestmentOpportunityRepository;
   decisions: InvestmentDecisionRepository;
   events: InvestmentEventStore;
-  audit: InvestmentSqlClient;
+  audit?: TransactionalAuditRepository;
 }
 
 export interface InvestmentUnitOfWork {
-  run<T>(work: (context: InvestmentTransactionContext) => Promise<T>): Promise<T>;
+  transaction<T>(work: (context: InvestmentTransactionContext) => Promise<T>): Promise<T>;
 }
