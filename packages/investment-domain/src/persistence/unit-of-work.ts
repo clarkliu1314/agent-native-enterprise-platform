@@ -1,8 +1,8 @@
 import type { TransactionalAuditRepository } from '@agent-native/runtime';
 import { PostgresInvestmentDecisionRepository, PostgresInvestmentOpportunityRepository } from './postgres-repositories';
 import { PostgresInvestmentEventStore } from './postgres-event-store';
-import type { InvestmentEventStore } from '../application/event-store';
-import type { InvestmentSqlClient, InvestmentTransactionContext, InvestmentUnitOfWork } from '../application/unit-of-work';
+import type { InvestmentEventStore, InvestmentSqlClient } from '../application/event-store';
+import type { InvestmentTransactionContext, InvestmentUnitOfWork } from '../application/unit-of-work';
 
 export interface InvestmentDatabase {
   transaction<T>(work: (tx: InvestmentSqlClient) => Promise<T>): Promise<T>;
