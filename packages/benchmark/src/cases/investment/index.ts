@@ -1,4 +1,4 @@
-import { benchmarkAdapters, benchmarkInvariants, type BenchmarkCase } from '../framework/types';
+import { benchmarkAdapters, benchmarkInvariants, type BenchmarkCase } from '../../framework/types';
 export const investmentBenchmarkCaseIds = ['B17', 'B18', 'B19', 'B20'] as const;
 export type InvestmentBenchmarkCaseId = (typeof investmentBenchmarkCaseIds)[number];
 export type InvestmentBenchmarkCase = BenchmarkCase & { id: InvestmentBenchmarkCaseId };
