@@ -1,6 +1,6 @@
 # Agent-native Enterprise Platform Implementation Plan
 
-> **Current phase:** Stage 12 — Production Readiness & Operability; Stage 12.7 Final Mainline Verification.
+> **Current phase:** Stage 12 — Production Readiness & Operability; Stage 12.7 Final Mainline Verification — CLOSED.
 
 The approved architecture baseline **A** remains locked. PostgreSQL is the durable source of truth; Redis is delivery/scheduling only; RuntimeFacade is the framework-neutral application boundary; API, Worker, Recovery, and Outbox Publisher are separate composition roots; the Run FSM is exactly `QUEUED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
 
@@ -130,11 +130,28 @@ Authoritative evidence:
 
 Run #889 is the authoritative mainline completion evidence for Stage 12.6.
 
+### Stage 12.7 — Final Mainline Verification
+
+**Status: CLOSED / COMPLETE.**
+
+Scope: final verification of the complete Stage 12 baseline on `main`, including the full test/typecheck/build/deployment-boundary path, the 64-case benchmark hard gate, failure/SLO gate, security regression gate, and Docker Compose smoke verification.
+
+Authoritative evidence:
+
+- PR #48 fixed the stale Compose benchmark-command contract assertion; fixed branch-head **Run #892 — GREEN**.
+- PR #48 merged to `main` at merge commit `3022fffabdeb503d2ae044521422e582d84213cc`.
+- Exact merge-SHA verification **Run #893 — GREEN**.
+- Final push-triggered `main` verification **Run #894 — GREEN** on commit `87a593f77a33da4b409f0cb92c1afcf26d624779`, whose tree is identical to the Stage 12.7 implementation merge tree.
+
+Run #893 is the authoritative exact-merge verification for the Stage 12.7 implementation; Run #894 is the final push-triggered mainline verification.
+
 ### Stage 12 roadmap
 
 - **12.5 Security Hardening:** CLOSED / COMPLETE.
 - **12.6 Production Readiness Benchmark:** CLOSED / COMPLETE.
-- **12.7 Final Mainline Verification:** IN PROGRESS — final verification of the complete Stage 12 baseline on `main`.
+- **12.7 Final Mainline Verification:** CLOSED / COMPLETE.
+
+Stage 12 is fully closed.
 
 ## Branch and merge discipline
 
