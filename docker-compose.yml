@@ -71,4 +71,4 @@ services:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/agent_native
       REDIS_URL: redis://redis:6379
       TZ: UTC
-    command: ["pnpm", "exec", "vitest", "run", "packages/benchmark/src"]
+    command: ["pnpm", "exec", "vitest", "run", "--no-file-parallelism", "packages/benchmark/src"]

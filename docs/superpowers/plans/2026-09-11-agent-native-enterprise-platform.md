@@ -1,6 +1,6 @@
 # Agent-native Enterprise Platform Implementation Plan
 
-> **Current phase:** Stage 12 — Production Readiness & Operability; Stage 12.6 Production Readiness Benchmark.
+> **Current phase:** Stage 12 — Production Readiness & Operability; Stage 12.7 Final Mainline Verification.
 
 The approved architecture baseline **A** remains locked. PostgreSQL is the durable source of truth; Redis is delivery/scheduling only; RuntimeFacade is the framework-neutral application boundary; API, Worker, Recovery, and Outbox Publisher are separate composition roots; the Run FSM is exactly `QUEUED`, `RUNNING`, `WAITING`, `SUCCEEDED`, `FAILED`, `CANCELLED`.
 
@@ -111,11 +111,30 @@ Authoritative evidence:
 
 Run #841 is the authoritative implementation completion evidence for Stage 12.5.
 
+### Stage 12.6 — Production Readiness Benchmark
+
+**Status: CLOSED / COMPLETE.**
+
+Authoritative closeout plan:
+
+- `docs/superpowers/plans/2026-09-16-stage12-6-closeout.md`
+- `docs/superpowers/plans/2026-09-16-stage12-6-task5-closeout.md`
+
+Scope completed: executable production-readiness benchmark coverage P01-P15 spanning benchmark harness, resilience, security/observability, failure/SLO, retention/purge, sensitive-data boundaries, and concurrency/duplicate-request behavior.
+
+Authoritative evidence:
+
+- PR #45 merged at `435dc56c5462c85b6478a33494a349a91d1facbc`; **Run #886 — GREEN** for branch validation and **Run #887 — GREEN** on the exact implementation merge SHA.
+- PR #47 merged the Task 5 documentation closeout at `fd702405cad2614c50ff569d7c3c3c7ffdc5f34b`.
+- **Run #889 — GREEN** on the exact Stage 12.6 closeout merge SHA.
+
+Run #889 is the authoritative mainline completion evidence for Stage 12.6.
+
 ### Stage 12 roadmap
 
 - **12.5 Security Hardening:** CLOSED / COMPLETE.
-- **12.6 Production Readiness Benchmark:** NEXT — production-operability benchmark matrix covering observability, control, audit, SLO/failure, and security invariants.
-- **12.7 Final Mainline Verification:** complete Stage 12 only after all gates pass on mainline.
+- **12.6 Production Readiness Benchmark:** CLOSED / COMPLETE.
+- **12.7 Final Mainline Verification:** IN PROGRESS — final verification of the complete Stage 12 baseline on `main`.
 
 ## Branch and merge discipline
 
