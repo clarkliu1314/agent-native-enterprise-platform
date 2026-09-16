@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { benchmarkAdapters, benchmarkCases, type BenchmarkRunResult } from './index';
-import { serializeBenchmarkReport } from './benchmark-artifact';
+import { serializeBenchmarkReport } from './framework/artifact';
 
 describe('benchmark report artifact', () => {
   it('serializes the complete 64-scenario matrix deterministically', () => {
@@ -14,7 +14,7 @@ describe('benchmark report artifact', () => {
       })),
     );
 
-    const artifact = serializeBenchmarkReport(results);
+    const artifact = serializeBenchmarkReport(results, benchmarkCases.map((testCase) => testCase.id));
 
     expect(artifact).toBe(
       `${JSON.stringify(
@@ -38,7 +38,7 @@ describe('benchmark report artifact', () => {
       details: 'only one scenario',
     };
 
-    expect(() => serializeBenchmarkReport([result])).toThrow(
+    expect(() => serializeBenchmarkReport([result], benchmarkCases.map((testCase) => testCase.id))).toThrow(
       'Benchmark report must contain exactly one result for every case-adapter pair',
     );
   });
