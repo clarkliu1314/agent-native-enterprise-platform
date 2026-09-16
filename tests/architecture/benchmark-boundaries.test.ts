@@ -16,6 +16,6 @@ describe('benchmark architecture boundaries', () => {
 
   it('keeps investment cases on the shared benchmark contract', async () => {
     const content = await readFile(join(process.cwd(), 'packages/benchmark/src/cases/investment/index.ts'), 'utf8');
-    expect(content).toContain("from '../framework/types'");
+    expect(content).toContain("from '../../framework/types'");
   });
 });
