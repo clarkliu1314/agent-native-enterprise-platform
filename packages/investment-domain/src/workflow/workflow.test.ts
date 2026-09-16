@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RunView } from '@agent-native/runtime-contract/durable';
 import { InvestmentWorkflow } from './workflow';
-import type { InvestmentWorkflowRuntime } from './runtime-port';
+import type { InvestmentWorkflowRuntime } from '../application/runtime-port';
 
 const run = (overrides: Partial<RunView> = {}): RunView => ({
   runId: 'run-1', agentId: 'equity-investment', state: 'QUEUED',
