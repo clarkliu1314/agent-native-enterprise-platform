@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { InvestmentApplicationService } from '../../../packages/investment-domain/src/application/application-service';
-import type { InvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/workflow/runtime-port';
+import type { InvestmentWorkflowRuntime } from '../../../packages/investment-domain/src/application/runtime-port';
 import type { RunView } from '@agent-native/runtime-contract/durable';
 import { InvestmentApiApplicationAdapter } from './investment-application';
 
