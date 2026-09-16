@@ -1,5 +1,5 @@
-import type { InvestmentRecommendation } from './investment-decision';
-import type { OpportunityStage } from './opportunity';
+import type { InvestmentRecommendation } from '../domain/investment-decision';
+import type { OpportunityStage } from '../domain/opportunity';
 
 export interface CreateOpportunityCommand {
   tenantId: string;

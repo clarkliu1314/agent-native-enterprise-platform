@@ -1,5 +1,5 @@
-import type { InvestmentDecision } from './investment-decision';
-import type { InvestmentOpportunity } from './opportunity';
+import type { InvestmentDecision } from '../domain/investment-decision';
+import type { InvestmentOpportunity } from '../domain/opportunity';
 
 export interface InvestmentOpportunityRepository {
   get(tenantId: string, opportunityId: string): Promise<InvestmentOpportunity | null>;

@@ -1,36 +1,37 @@
 import { randomUUID } from 'node:crypto';
 import type { ApproveInvestmentCommand, AdvanceOpportunityStageCommand, CreateOpportunityCommand, RejectInvestmentCommand } from './commands';
-import { decisionIdempotencyKey, createInvestmentDecision, type InvestmentDecision } from './investment-decision';
-import { PostgresInvestmentDecisionRepository, PostgresInvestmentOpportunityRepository } from './postgres-repositories';
+import { decisionIdempotencyKey, createInvestmentDecision, type InvestmentDecision } from '../domain/investment-decision';
 import type { InvestmentEventStore } from './event-store';
-import { PostgresInvestmentEventStore } from './event-store';
-import type { InvestmentDomainEvent } from './events';
+import type { InvestmentDomainEvent } from '../domain/events';
 import type { InvestmentDecisionRepository, InvestmentOpportunityRepository } from './repositories';
-import { advanceOpportunityStage, type InvestmentOpportunity } from './opportunity';
+import { advanceOpportunityStage, type InvestmentOpportunity } from '../domain/opportunity';
 import type { AuditRecord, TransactionalAuditRepository } from '@agent-native/runtime';
 
 export interface InvestmentSqlClient {
   query<T = Record<string, unknown>>(sql: string, params?: readonly unknown[]): Promise<{ rows: T[]; rowCount: number }>;
 }
-export interface InvestmentDatabase { transaction<T>(work: (tx: InvestmentSqlClient) => Promise<T>): Promise<T>; }
-export interface InvestmentTransactionContext { opportunities: InvestmentOpportunityRepository; decisions: InvestmentDecisionRepository; events: InvestmentEventStore; audit?: TransactionalAuditRepository; tx: InvestmentSqlClient; }
-export interface InvestmentUnitOfWork { transaction<T>(work: (context: InvestmentTransactionContext) => Promise<T>): Promise<T>; }
 
-export class PostgresInvestmentUnitOfWork implements InvestmentUnitOfWork {
-  constructor(
-    private readonly db: InvestmentDatabase,
-    private readonly eventStore: InvestmentEventStore = new PostgresInvestmentEventStore(),
-    private readonly audit?: TransactionalAuditRepository,
-  ) {}
-  transaction<T>(work: (context: InvestmentTransactionContext) => Promise<T>): Promise<T> {
-    return this.db.transaction(async (tx) => work({ tx, opportunities: new PostgresInvestmentOpportunityRepository(tx), decisions: new PostgresInvestmentDecisionRepository(tx), events: this.eventStore, audit: this.audit }));
-  }
+export interface InvestmentTransactionContext {
+  opportunities: InvestmentOpportunityRepository;
+  decisions: InvestmentDecisionRepository;
+  events: InvestmentEventStore;
+  audit?: TransactionalAuditRepository;
+  tx: InvestmentSqlClient;
 }
+
+export interface InvestmentUnitOfWork {
+  transaction<T>(work: (context: InvestmentTransactionContext) => Promise<T>): Promise<T>;
+}
+
 function now(commandNow?: string): string { return commandNow ?? new Date().toISOString(); }
+
 function decisionConflict(existing: InvestmentDecision, command: ApproveInvestmentCommand | RejectInvestmentCommand): Error | null {
-  if (existing.opportunityId !== command.opportunityId || existing.tenantId !== command.tenantId || existing.decisionCycle !== command.decisionCycle || existing.recommendation !== command.recommendation || existing.rationale !== command.rationale) return new Error(`Investment decision idempotency conflict: ${command.idempotencyKey}`);
+  if (existing.opportunityId !== command.opportunityId || existing.tenantId !== command.tenantId || existing.decisionCycle !== command.decisionCycle || existing.recommendation !== command.recommendation || existing.rationale !== command.rationale) {
+    return new Error(`Investment decision idempotency conflict: ${command.idempotencyKey}`);
+  }
   return null;
 }
+
 function investmentAudit(input: {
   auditId: string;
   tenantId: string;
@@ -65,6 +66,7 @@ function investmentAudit(input: {
 
 export class InvestmentApplicationService {
   constructor(private readonly uow: InvestmentUnitOfWork) {}
+
   async createOpportunity(command: CreateOpportunityCommand): Promise<InvestmentOpportunity> {
     return this.uow.transaction(async ({ opportunities, events, audit, tx }) => {
       const existing = await opportunities.get(command.tenantId, command.opportunityId);
@@ -77,6 +79,7 @@ export class InvestmentApplicationService {
       return persisted;
     });
   }
+
   async advanceStage(command: AdvanceOpportunityStageCommand): Promise<InvestmentOpportunity> {
     return this.uow.transaction(async ({ opportunities, events, audit, tx }) => {
       const current = await opportunities.get(command.tenantId, command.opportunityId);
@@ -90,8 +93,10 @@ export class InvestmentApplicationService {
       return updated;
     });
   }
+
   approve(command: ApproveInvestmentCommand): Promise<InvestmentDecision> { return this.decide(command, 'APPROVE'); }
   reject(command: RejectInvestmentCommand): Promise<InvestmentDecision> { return this.decide(command, 'REJECT'); }
+
   private async decide(command: ApproveInvestmentCommand | RejectInvestmentCommand, recommendation: 'APPROVE' | 'REJECT'): Promise<InvestmentDecision> {
     const expectedKey = decisionIdempotencyKey(command.opportunityId, command.decisionCycle);
     if (command.idempotencyKey !== expectedKey) throw new Error(`Investment decision idempotency key mismatch: expected ${expectedKey}`);

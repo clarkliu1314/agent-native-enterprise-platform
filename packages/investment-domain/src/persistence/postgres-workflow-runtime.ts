@@ -1,9 +1,8 @@
 import type { RunView } from '@agent-native/runtime-contract/durable';
 import { DurableRuntimeService, PostgresRuntimeRepositories, type AuditRepository, type TransactionalAuditRepository, type RuntimeAdapter, type SqlClient, type TransactionRunner } from '@agent-native/runtime';
-import type { InvestmentWorkflowRuntime } from './runtime-port';
+import type { InvestmentWorkflowRuntime } from '../workflow/runtime-port';
 
 export type InvestmentWorkflowDatabase = TransactionRunner & SqlClient;
-
 type WorkflowMetadata = { tenantId: string; opportunityId: string; nextStep: number };
 const STEPS = ['research', 'due_diligence', 'analysis', 'recommendation'] as const;
 
