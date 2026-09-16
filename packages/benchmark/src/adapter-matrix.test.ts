@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryAgentRuntime } from '@agent-native/runtime';
 import { benchmarkAdapters } from './index';
-import { createBenchmarkAdapters } from './adapters';
+import { createBenchmarkAdapters } from './framework/adapters';
 
 describe('benchmark adapter execution contract', () => {
   it('creates one framework adapter per benchmark adapter name over the same runtime contract', () => {
