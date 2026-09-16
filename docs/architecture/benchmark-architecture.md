@@ -28,7 +28,7 @@ A new business domain adds a new case directory and suite; it does not change fr
 - `suites/investment-suite.ts` exposes investment cases.
 - `suites/full-suite.ts` composes both.
 
-The existing `src/index.ts` remains a compatibility entry point and exports the full suite. It is not the place where new cases should be authored.
+The root `src/index.ts` is a compatibility facade for the legacy platform benchmark runner. It exposes the canonical B01-B16 matrix as `benchmarkCases` while also exporting the explicit investment cases and `fullBenchmarkSuite`. New cases must be authored under their domain case directory, not in the root entry point.
 
 ## Matrix
 
