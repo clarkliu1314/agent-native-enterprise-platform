@@ -1,4 +1,4 @@
-import { benchmarkAdapters, benchmarkInvariants, type BenchmarkCase } from '../framework/types';
+import { benchmarkAdapters, benchmarkInvariants, type BenchmarkCase } from '../../framework/types';
 const sharedAdapters = benchmarkAdapters;
 const safety = benchmarkInvariants;
 function defineCase(id: BenchmarkCase['id'], fixture: string, runState: string, recoveryState: string, toolExecutionState: string, outboxState: string, llm: string, tool: string, steps: readonly string[], sqlAssertions: readonly string[], expectedResult: string, failureCriteria: readonly string[]): BenchmarkCase {
