@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { authorizeComponent, createSecurityContext, validateAuditRecord } from '@agent-native/runtime';
 import { createStructuredLogEvent } from '@agent-native/observability';
-import { runFailureSloBenchmark } from './failure-slo-benchmark.js';
+import { runFailureSloBenchmark } from './cases/platform/failure-slo-benchmark';
 import { createRetentionPolicy, purgeExpiredRecords } from './retention-readiness.js';
 import { buildSensitiveDataBoundary, sanitizeBoundaryPayload, executeDuplicateRequestProbe } from './security-concurrency-readiness.js';
 
