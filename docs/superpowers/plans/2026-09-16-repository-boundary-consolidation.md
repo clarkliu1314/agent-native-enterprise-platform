@@ -42,7 +42,7 @@ packages/benchmark/src/
   cases/investment/
   suites/
 
- tests/e2e/
+tests/e2e/
   platform/
   investment/
 ```
@@ -72,13 +72,13 @@ The following imports are prohibited from the Investment Domain:
 
 ## Work sequence
 
-1. Establish architecture documentation and boundary guardrails.
-2. Split Investment Domain source from Application, Persistence, and Workflow implementation.
-3. Re-home Investment tests beside their owning boundary.
-4. Reorganize Benchmark into shared framework + platform cases + investment cases + suites.
-5. Re-home E2E tests into platform/investment ownership.
-6. Reconcile README, AGENTS, and architecture documentation.
-7. Run typecheck, unit/integration/E2E, benchmark, compose smoke, and mainline CI.
+1. Establish architecture documentation and boundary guardrails. **Done**
+2. Split Investment Domain source from Application, Persistence, and Workflow implementation. **Done**
+3. Re-home Investment tests beside their owning boundary. **In progress: source/test boundary established; remaining test ownership cleanup follows CI.**
+4. Reorganize Benchmark into shared framework + platform cases + investment cases + suites. **In progress: shared framework, platform cases, investment cases, and suites established; legacy platform benchmark files remain for compatibility and will be consolidated after green verification.**
+5. Re-home E2E tests into platform/investment ownership. **Next cleanup pass.**
+6. Reconcile README, AGENTS, and architecture documentation. **Done**
+7. Run typecheck, unit/integration/E2E, benchmark, compose smoke, and mainline CI. **Running in PR #50.**
 
 ## Completion criteria
 
