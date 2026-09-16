@@ -1,13 +1,17 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { serializeBenchmarkReport } from './benchmark-artifact';
+import { serializeBenchmarkReport } from './framework/artifact';
+import { benchmarkCases } from './index';
 import { benchmarkRunner } from './benchmark-runner';
 
 describe('benchmark executable smoke', () => {
   it('runs the canonical 64-scenario matrix and writes a deterministic report', async () => {
     const results = await benchmarkRunner.runAll();
-    const artifact = serializeBenchmarkReport(results);
+    const artifact = serializeBenchmarkReport(
+      results,
+      benchmarkCases.map((testCase) => testCase.id),
+    );
     const artifactPath = resolve(process.cwd(), 'artifacts', 'benchmark-results.json');
 
     mkdirSync(dirname(artifactPath), { recursive: true });
