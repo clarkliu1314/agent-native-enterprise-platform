@@ -1,4 +1,5 @@
-import { createBenchmarkRunner } from './scenario-runner';
-import { executeBenchmarkScenario } from './scenario-executor';
+import { platformBenchmarkCases } from './cases/platform';
+import { createBenchmarkRunner } from './framework/scenario-runner';
+import { executeBenchmarkScenario } from './cases/platform/scenario-executor';
 
-export const benchmarkRunner = createBenchmarkRunner(executeBenchmarkScenario);
+export const benchmarkRunner = createBenchmarkRunner(platformBenchmarkCases, executeBenchmarkScenario);

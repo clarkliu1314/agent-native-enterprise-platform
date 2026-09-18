@@ -26,19 +26,29 @@ This repository builds an enterprise-grade Agent-native runtime for equity-inves
 7. When CI fails, identify the exact failing job, step, and root cause before editing code.
 8. Preserve idempotency keys across retries and ambiguous external outcomes.
 9. Do not change database state models without corresponding PostgreSQL assertions.
+10. Keep business-domain code independent from infrastructure implementations; composition roots construct concrete adapters.
 
 ## Repository map
 
 - `packages/runtime-contract`: stable application-facing runtime types and lifecycle contract.
-- `packages/runtime`: deterministic in-memory reference implementation.
+- `packages/runtime`: deterministic in-memory reference implementation and shared infrastructure ports.
 - `packages/durability`: PostgreSQL schema, durable run state, recovery coordination.
 - `packages/tool-permission`: authorization policy.
 - `packages/idempotency`: idempotency state/result semantics.
 - `packages/outbox`: transactional outbox and publisher semantics.
 - `packages/tool-runtime`: execution boundary combining safety concerns.
 - `packages/adapters/*`: framework adapters.
+- `packages/investment-domain/src/domain`: investment entities, invariants, and domain events.
+- `packages/investment-domain/src/application`: investment use cases and persistence/runtime ports.
+- `packages/investment-domain/src/persistence`: PostgreSQL implementations and durable persistence integration.
+- `packages/investment-domain/src/workflow`: investment workflow semantics and runtime port.
+- `packages/investment-domain/src/tool`: reserved for thin investment-specific tool definitions.
+- `packages/benchmark/src`: shared benchmark framework plus platform and investment cases.
 - `apps/worker`: durable asynchronous worker entrypoints.
 - `tests/contract`: cross-adapter contract tests.
+- `tests/architecture`: dependency-boundary guard tests.
+- `tests/e2e/platform`: platform durability/operability E2E tests.
+- `tests/e2e/investment`: investment business E2E tests.
 - `docs/wiki`: human- and agent-readable project documentation.
 - `docs/superpowers/plans`: approved implementation plans.
 
@@ -51,7 +61,7 @@ pnpm typecheck
 pnpm test
 ```
 
-For persistence/recovery changes, also run the PostgreSQL integration tests and inspect SQL state assertions. For adapter changes, run the shared contract suite. For benchmark changes, run the full benchmark matrix.
+For persistence/recovery changes, also run the PostgreSQL integration tests and inspect SQL state assertions. For adapter changes, run the shared contract suite. For benchmark changes, run the full benchmark matrix and Compose smoke verification.
 
 ## Commit discipline
 

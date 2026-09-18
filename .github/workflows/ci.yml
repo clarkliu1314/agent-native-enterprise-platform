@@ -89,12 +89,12 @@ jobs:
           path: artifacts/benchmark-results.json
           if-no-files-found: error
       - name: Failure and SLO benchmark gate
-        run: pnpm exec vitest run packages/benchmark/src/failure-slo-benchmark.test.ts
+        run: pnpm exec vitest run packages/benchmark/src/cases/platform/failure-slo-benchmark.test.ts
       - name: Security regression benchmark gate
         id: security_regression
         run: |
           rm -f artifacts/security-regression-results.json
-          pnpm exec vitest run packages/benchmark/src/security-regression-benchmark.test.ts
+          pnpm exec vitest run packages/benchmark/src/cases/platform/security-regression-benchmark.test.ts
           node --input-type=module <<'NODE'
           import { readFileSync } from 'node:fs';
           const report = JSON.parse(readFileSync('artifacts/security-regression-results.json', 'utf8'));

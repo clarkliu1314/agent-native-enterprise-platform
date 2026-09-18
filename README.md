@@ -1,6 +1,6 @@
 # Agent-native Enterprise Platform
 
-An enterprise-grade Agent-native runtime and application foundation.
+An enterprise-grade Agent-native runtime and equity-investment management foundation.
 
 ## Design principles
 
@@ -9,20 +9,23 @@ An enterprise-grade Agent-native runtime and application foundation.
 - Tool calls are policy-authorized and idempotent
 - State transitions and outbox publication have explicit transaction boundaries
 - AgentScope, LangGraph, Eino, and Mastra integrate through one runtime contract
-- The same benchmark suite validates every adapter
+- The same benchmark framework validates every adapter
 - Vercel is a stateless application edge; durable worker execution remains independently deployable
 
 ## Repository layout
 
 ```text
-apps/                 # API, web, worker
-packages/             # runtime and domain packages
-packages/adapters/    # AgentScope, LangGraph, Eino, Mastra adapters
-packages/deployment-boundary/ # Vercel-safe application boundary + LLM gateway contract
-tests/                # contract, integration, benchmark tests
-infra/                # local infrastructure
-docs/                 # architecture and implementation plans
+apps/                       # API, worker, recovery, outbox publisher
+packages/                   # runtime, durability, safety, and business-domain packages
+packages/adapters/          # AgentScope, LangGraph, Eino, Mastra adapters
+packages/investment-domain/ # bounded investment domain: domain/application/persistence/workflow/tool
+packages/benchmark/         # shared benchmark framework and platform/domain cases
+tests/                      # contract, architecture, integration, and E2E tests
+infra/                      # local infrastructure
+docs/                       # architecture, status, and implementation plans
 ```
+
+See `docs/architecture/repository-structure.md` for dependency direction and boundary rules.
 
 ## Deployment boundary
 
@@ -34,33 +37,21 @@ Model access is provider-neutral through `LlmGateway`; provider credentials are 
 
 See `docs/architecture/vercel-deployment-boundary.md` for topology, environment variables, and failure semantics.
 
-### Environment
-
-Required:
-
-- `DATABASE_URL`
-
-Optional:
-
-- `REDIS_URL`
-- `LLM_GATEWAY_URL`
-- `LLM_PROVIDER_API_KEY`
-- `WORKER_ENDPOINT`
-
-Missing required configuration fails closed; optional configuration is never replaced by an unsafe default.
-
 ## Local Compose
 
 Local Compose runs PostgreSQL, Redis, migrations, the durable-worker smoke test, and the benchmark smoke test. It does not fabricate a mock production API or LLM provider merely for deployment cosmetics.
 
-## Implementation plans
+## Verification
 
-- `docs/superpowers/plans/2026-09-11-agent-native-enterprise-platform.md` — overall platform plan
-- `docs/superpowers/plans/2026-09-12-equity-investment-domain.md` — completed Stage 10 equity-investment vertical slice and Stage 11 API boundary
-- `docs/superpowers/plans/2026-09-11-vercel-deployment-boundary.md` — Vercel deployment boundary
+```bash
+pnpm typecheck
+pnpm test
+```
 
-## Status
+Persistence/recovery changes also require PostgreSQL integration assertions. Adapter changes require the shared contract suite. Benchmark changes require the full benchmark matrix and Compose smoke verification.
 
-**Stage 10 complete.** The durable platform foundation and equity-investment vertical slice are verified on main, including crash recovery and B17-B20 durability cases. Authoritative post-merge CI Run #437 is green.
+## Current status
 
-**Stage 11 next:** expose the existing durable investment capabilities through the stateless application/API boundary without duplicating runtime or persistence logic.
+Stage 12.7 Final Mainline Verification is complete. The platform foundation, production-readiness hardening, equity-investment vertical slice, benchmark matrix, auditability, SLO/failure handling, and security hardening have been verified on main.
+
+The repository is now in a consolidation phase: architectural boundaries are being made explicit before the next product-development cycle.
