@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { benchmarkAdapters, benchmarkCases, type BenchmarkRunner } from './index';
+import { platformBenchmarkCases } from './index';
+import { benchmarkAdapters, type BenchmarkRunner } from '../../framework/types';
 
 describe('benchmark adapter matrix', () => {
   it('runs every case against every adapter through one runner contract', async () => {
@@ -19,12 +20,12 @@ describe('benchmark adapter matrix', () => {
     };
 
     const results = await Promise.all(
-      benchmarkCases.flatMap((testCase) =>
+      platformBenchmarkCases.flatMap((testCase) =>
         benchmarkAdapters.map((adapter) => runner.run(testCase, adapter)),
       ),
     );
 
-    expect(benchmarkCases).toHaveLength(16);
+    expect(platformBenchmarkCases).toHaveLength(16);
     expect(results).toHaveLength(64);
     expect(new Set(results.map((result) => result.caseId))).toHaveProperty('size', 16);
     expect(new Set(results.map((result) => result.adapter))).toEqual(new Set(benchmarkAdapters));
