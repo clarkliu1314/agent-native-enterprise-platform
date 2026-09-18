@@ -3,8 +3,8 @@ import { dirname, resolve } from 'node:path';
 import { authorizeComponent, createSecurityContext, validateAuditRecord } from '@agent-native/runtime';
 import { createStructuredLogEvent } from '@agent-native/observability';
 import { runFailureSloBenchmark } from './cases/platform/failure-slo-benchmark';
-import { createRetentionPolicy, purgeExpiredRecords } from './retention-readiness.js';
-import { buildSensitiveDataBoundary, sanitizeBoundaryPayload, executeDuplicateRequestProbe } from './security-concurrency-readiness.js';
+import { createRetentionPolicy, purgeExpiredRecords } from './cases/platform/retention-readiness.js';
+import { buildSensitiveDataBoundary, sanitizeBoundaryPayload, executeDuplicateRequestProbe } from './cases/platform/security-concurrency-readiness.js';
 
 export const productionReadinessCaseIds = ['P01', 'P02', 'P03', 'P04', 'P05', 'P06', 'P07', 'P08', 'P09', 'P10', 'P11', 'P12', 'P13', 'P14', 'P15'] as const;
 export type ProductionReadinessCaseId = (typeof productionReadinessCaseIds)[number];
