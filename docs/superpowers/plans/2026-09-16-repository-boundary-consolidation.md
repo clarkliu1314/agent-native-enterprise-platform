@@ -78,7 +78,7 @@ The following imports are prohibited from the Investment Domain:
 4. Reorganize Benchmark into shared framework + platform cases + investment cases + suites. **Done**
 5. Re-home E2E tests into platform/investment ownership. **Done**
 6. Reconcile README, AGENTS, and architecture documentation. **Done**
-7. Run typecheck, unit/integration/E2E, benchmark, compose smoke, and mainline CI. **Done — PR #50 CI Run #1017 is green; boundary guards were hardened afterward and are being re-verified.**
+7. Run typecheck, unit/integration/E2E, benchmark, compose smoke, and mainline CI. **Done — PR #50 final HEAD `5b348d845a494b3292cf8a9dcdf0b5315e19398f` passed CI Run #1020. PR #50 was merged to `main` as `527d7a652390c5d06c2efa16d2f0a13e6c3b966d`.**
 
 ## Completion criteria
 
