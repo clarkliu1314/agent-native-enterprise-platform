@@ -111,7 +111,7 @@ CANCELLED
 
 1. Case 必须属于 tenant。
 2. Case 必须关联已存在的 Opportunity。
-3. 同一 tenant + opportunity 只能存在一个 active Case。
+3. 同一 tenant + opportunity 最多存在一个 Case；Case 进入终态后也不创建第二个并行 Case。
 4. DRAFT → RESEARCHING 是研究启动的合法入口。
 5. RESEARCHING → ANALYZING 只能在研究任务成功完成后发生。
 6. ANALYZING → DECISION_PENDING 表示分析材料已形成。
