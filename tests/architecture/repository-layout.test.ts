@@ -41,6 +41,10 @@ describe('repository boundary layout', () => {
       'packages/benchmark/src/failure-slo-benchmark.ts',
       'packages/benchmark/src/scenario-executor.ts',
       'packages/benchmark/src/failure-slo-benchmark.test.ts',
+      'packages/benchmark/src/retention-readiness.ts',
+      'packages/benchmark/src/retention-readiness.test.ts',
+      'packages/benchmark/src/security-concurrency-readiness.ts',
+      'packages/benchmark/src/security-concurrency-readiness.test.ts',
     ];
 
     for (const path of legacyPaths) {
