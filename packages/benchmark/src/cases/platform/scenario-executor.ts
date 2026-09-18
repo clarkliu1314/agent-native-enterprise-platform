@@ -11,7 +11,7 @@ import {
 import { OutboxPublisher, type OutboxMessage, type OutboxRepository } from '@agent-native/outbox';
 import { RecoveryCoordinator, type RecoveryCandidate } from '@agent-native/durability';
 import { InMemoryAgentRuntime } from '@agent-native/runtime';
-import type { BenchmarkAdapter, BenchmarkCase } from './index';
+import type { BenchmarkAdapter, BenchmarkCase } from '../../framework/types';
 import { createBenchmarkAdapters } from '../../framework/adapters';
 import { executePostgresRecoveryScenario } from './postgres-recovery-scenarios';
 import { executePostgresTailScenario } from './postgres-tail-scenarios';
