@@ -77,6 +77,7 @@ name
 description
 status
 previousStatus
+decisionId
 createdAt
 updatedAt
 version
@@ -206,6 +207,7 @@ name
 description
 status
 previous_status
+decision_id
 version
 created_at
 updated_at
@@ -312,7 +314,7 @@ Run = WAITING
 Resume 是 durable application command，不直接操作 Redis：
 
 ```
-ResumeResearch
+ResumeCase
  -> Permission
  -> Idempotency
  -> expected version / run validation
