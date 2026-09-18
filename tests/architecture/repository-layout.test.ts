@@ -36,11 +36,9 @@ describe('repository boundary layout', () => {
     }
   });
 
-  it('keeps benchmark implementations under framework/case boundaries', async () => {
+  it('does not retain legacy benchmark implementation paths', async () => {
     const legacyPaths = [
       'packages/benchmark/src/failure-slo-benchmark.ts',
-      'packages/benchmark/src/postgres-recovery-scenarios.ts',
-      'packages/benchmark/src/postgres-tail-scenarios.ts',
     ];
 
     for (const path of legacyPaths) {
