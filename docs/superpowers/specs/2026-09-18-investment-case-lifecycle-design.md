@@ -433,7 +433,7 @@ Then:
 
 Given Run = WAITING.
 
-When ResumeResearch is submitted once or retried with the same idempotency key.
+When ResumeCase is submitted once or retried with the same idempotency key.
 
 Then:
 
