@@ -1,12 +1,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createSecurityContext, SecurityContextError, requireSecurityContext } from '../../../runtime/src/security-context';
-import { assertTenantOwnership } from '../../../runtime/src/tenant-scope';
-import { authorizeComponent, createSecuredToolPermission } from '../../../runtime/src/least-privilege';
-import { sanitizeSecurityData } from '../../../runtime/src/security-data';
-import { sanitizeSecurityError } from '../../../runtime/src/security-errors';
-import { InMemoryRetentionRepository, RetentionPurgeService } from '../../../runtime/src/retention-policy';
+import { createSecurityContext, SecurityContextError, requireSecurityContext } from '../../../../runtime/src/security-context';
+import { assertTenantOwnership } from '../../../../runtime/src/tenant-scope';
+import { authorizeComponent, createSecuredToolPermission } from '../../../../runtime/src/least-privilege';
+import { sanitizeSecurityData } from '../../../../runtime/src/security-data';
+import { sanitizeSecurityError } from '../../../../runtime/src/security-errors';
+import { InMemoryRetentionRepository, RetentionPurgeService } from '../../../../runtime/src/retention-policy';
 
 interface SecurityCaseResult {
   id: string;
