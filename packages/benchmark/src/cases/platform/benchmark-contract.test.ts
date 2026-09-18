@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { benchmarkCases, type BenchmarkCase } from './index';
+import { platformBenchmarkCases, type BenchmarkCase } from './index';
 
 describe('benchmark contract', () => {
   it('defines exactly 16 deterministic cases', () => {
-    expect(benchmarkCases).toHaveLength(16);
+    expect(platformBenchmarkCases).toHaveLength(16);
   });
 
   it('requires the durable safety contract on every case', () => {
-    for (const testCase of benchmarkCases) {
+    for (const testCase of platformBenchmarkCases) {
       expect(testCase.id).toMatch(/^B\d{2}$/);
       expect(testCase.fixture).toBeTruthy();
       expect(testCase.initialState).toBeTruthy();
@@ -23,15 +23,15 @@ describe('benchmark contract', () => {
   });
 
   it('keeps the adapter matrix identical for all four frameworks', () => {
-    const adapters = benchmarkCases[0].adapters;
+    const adapters = platformBenchmarkCases[0].adapters;
     expect(adapters).toEqual(['agentscope', 'langgraph', 'eino', 'mastra']);
-    for (const testCase of benchmarkCases) {
+    for (const testCase of platformBenchmarkCases) {
       expect(testCase.adapters).toEqual(adapters);
     }
   });
 
   it('exposes a stable case shape for machine-readable runners', () => {
-    const sample: BenchmarkCase = benchmarkCases[0];
+    const sample: BenchmarkCase = platformBenchmarkCases[0];
     expect(Object.keys(sample).sort()).toEqual([
       'adapters',
       'expectedResult',
