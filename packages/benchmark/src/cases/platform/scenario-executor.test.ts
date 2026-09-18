@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { benchmarkAdapters, benchmarkCases } from './index';
+import { benchmarkAdapters, benchmarkCases } from '../../index';
 import { executeBenchmarkScenario } from './cases/platform/scenario-executor';
 
 describe('benchmark scenario executor', () => {
