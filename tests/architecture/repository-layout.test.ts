@@ -39,6 +39,8 @@ describe('repository boundary layout', () => {
   it('does not retain legacy benchmark implementation paths', async () => {
     const legacyPaths = [
       'packages/benchmark/src/failure-slo-benchmark.ts',
+      'packages/benchmark/src/scenario-executor.ts',
+      'packages/benchmark/src/failure-slo-benchmark.test.ts',
     ];
 
     for (const path of legacyPaths) {
