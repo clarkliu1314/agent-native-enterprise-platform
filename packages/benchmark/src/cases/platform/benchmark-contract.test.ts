@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { platformBenchmarkCases, type BenchmarkCase } from './index';
+import { platformBenchmarkCases } from './index';
+import type { BenchmarkCase } from '../../framework/types';
 
 describe('benchmark contract', () => {
   it('defines exactly 16 deterministic cases', () => {
