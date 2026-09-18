@@ -52,6 +52,8 @@ describe('repository boundary layout', () => {
       'packages/benchmark/src/runner.test.ts',
       'packages/benchmark/src/postgres-recovery-scenarios.test.ts',
       'packages/benchmark/src/postgres-tail-scenarios.test.ts',
+      'packages/benchmark/src/production-readiness-benchmark.ts',
+      'packages/benchmark/src/production-readiness-benchmark.test.ts',
     ];
 
     for (const path of legacyPaths) {
