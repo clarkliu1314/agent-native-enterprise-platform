@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { benchmarkAdapters, benchmarkCases } from '../../index';
-import { executeBenchmarkScenario } from './cases/platform/scenario-executor';
+import { executeBenchmarkScenario } from './scenario-executor';
 
 describe('benchmark scenario executor', () => {
   it.each(benchmarkAdapters)('executes B01 through the %s adapter against the tool runtime', async (adapter) => {
