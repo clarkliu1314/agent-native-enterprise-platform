@@ -12,10 +12,10 @@ import { OutboxPublisher, type OutboxMessage, type OutboxRepository } from '@age
 import { RecoveryCoordinator, type RecoveryCandidate } from '@agent-native/durability';
 import { InMemoryAgentRuntime } from '@agent-native/runtime';
 import type { BenchmarkAdapter, BenchmarkCase } from './index';
-import { createBenchmarkAdapters } from './framework/adapters';
+import { createBenchmarkAdapters } from '../../framework/adapters';
 import { executePostgresRecoveryScenario } from './postgres-recovery-scenarios';
 import { executePostgresTailScenario } from './postgres-tail-scenarios';
-import type { BenchmarkScenarioResult } from './scenario-runner';
+import type { BenchmarkScenarioResult } from '../../framework/scenario-runner';
 
 interface ScenarioState {
   toolExecutions: number;
